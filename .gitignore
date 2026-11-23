@@ -1,0 +1,14 @@
+# Local VS Code preferences
+/.vscode/settings.json
+
+# Go build and test artifacts
+/bin/
+/dist/
+/quiz.com
+*.exe
+*.test
+*.out
+
+# Operating system files
+.DS_Store
+Thumbs.db
