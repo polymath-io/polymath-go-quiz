@@ -129,3 +129,50 @@ func Test_GetAnswer(t *testing.T) {
 		})
 	}
 }
+
+func runMainWithInput(t *testing.T, input string) string {
+	t.Helper()
+
+	oldStdin := os.Stdin
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("create stdin pipe: %v", err)
+	}
+
+	os.Stdin = reader
+	t.Cleanup(func() {
+		os.Stdin = oldStdin
+		_ = reader.Close()
+		_ = writer.Close()
+	})
+
+	if _, err := io.WriteString(writer, input); err != nil {
+		t.Fatalf("write quiz input: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close stdin pipe writer: %v", err)
+	}
+
+	return captureStdout(t, main)
+}
+
+
+func Test_QuizIntegration(t *testing.T) {
+	output := runMainWithInput(t, "red\nnot-blue\n")
+
+	for _, want := range []string{
+		"first color?",
+		"second color?",
+		"Phase: Correct\tMessage: well done",
+		"Phase: Incorrect\tMessage: Best luck on next",
+		"Phase: Done",
+	} {
+		if !strings.Contains(output, want) {
+			t.Errorf("quiz output does not contain %q:\n%s", want, output)
+		}
+	}
+
+	if strings.Index(output, "second color?") < strings.Index(output, "first color?") {
+		t.Errorf("second question appeared before first:\n%s", output)
+	}
+}
