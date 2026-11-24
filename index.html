@@ -5,16 +5,19 @@
 </head>
 <body>
 	<h1>Simple Quiz</h1>
-	
+	<h2>{{.Prompt}}</h2>
+	<ul>
+		{{range .Options}}
+			<li>{{.}}</li>
+		{{end}}
+	</ul>
 	<form method="POST" action="/">
-		<label for="userInput">your answer:</label>
-		<input type="text" id="userInput" name="userInput" required>
-		<button type="submit">Check Answer</button>
+  		<input name="answer" required>
+  		<button type="submit">Submit</button>
 	</form>
 
 	{{if .Processed}}
-		<p><strong>You sent:</strong> {{.Input}}</p>
-		<p><strong>Result:</strong> {{.Processed}}</p>
+		<p>{{.Processed}}</p>
 	{{end}}
 </body>
 </html>
