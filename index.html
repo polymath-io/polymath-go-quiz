@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Simple Quiz I/O</title>
+</head>
+<body>
+	<h1>Simple Quiz</h1>
+	
+	<form method="POST" action="/">
+		<label for="userInput">your answer:</label>
+		<input type="text" id="userInput" name="userInput" required>
+		<button type="submit">Check Answer</button>
+	</form>
+
+	{{if .Processed}}
+		<p><strong>You sent:</strong> {{.Input}}</p>
+		<p><strong>Result:</strong> {{.Processed}}</p>
+	{{end}}
+</body>
+</html>
