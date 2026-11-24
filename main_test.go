@@ -71,14 +71,20 @@ func Test_QuizHandlerRejectsQuizWithoutQuestions(t *testing.T) {
 	}
 }
 
-func Test_QuizHandlerProcessesAnswer(t *testing.T) {
+func Test_QuizHandlerAdvancesToNextQuestionAfterAnswer(t *testing.T) {
 	quiz := Quiz{
 		Spec: QuizSpec{
-			Questions: []Question{{
-				Prompt:        "Pick a color",
-				CorrectAnswer: "red",
-				Options:       []string{"red", "blue"},
-			}},
+			Questions: []Question{
+				{
+					Prompt:        "Pick a color",
+					CorrectAnswer: "red",
+					Options:       []string{"red", "blue"},
+				},
+				{
+					Prompt:  "Pick an animal",
+					Options: []string{"cat", "dog"},
+				},
+			},
 		},
 	}
 	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("answer=red"))
@@ -90,7 +96,48 @@ func Test_QuizHandlerProcessesAnswer(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("POST / status = %d, want %d", response.Code, http.StatusOK)
 	}
-	if !strings.Contains(response.Body.String(), "Phase: Correct") {
-		t.Errorf("POST / body does not show correct-answer feedback:\n%s", response.Body.String())
+	for _, want := range []string{"Pick an animal", "Phase: Correct"} {
+		if !strings.Contains(response.Body.String(), want) {
+			t.Errorf("POST / body does not contain %q:\n%s", want, response.Body.String())
+		}
+	}
+}
+
+func Test_QuizHandlerShowsCompletionAfterLastAnswer(t *testing.T) {
+	quiz := Quiz{
+		Spec: QuizSpec{
+			Questions: []Question{{
+				Prompt:        "Pick a color",
+				CorrectAnswer: "red",
+				Options:       []string{"red", "blue"},
+			}},
+		},
+	}
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("answer=blue"))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response := httptest.NewRecorder()
+	handler := newQuizHandler(quiz)
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("POST / status = %d, want %d", response.Code, http.StatusOK)
+	}
+	for _, want := range []string{"Quiz complete", "Phase: Incorrect", "Best luck on next", "Phase: Done"} {
+		if !strings.Contains(response.Body.String(), want) {
+			t.Errorf("POST / body does not contain %q:\n%s", want, response.Body.String())
+		}
+	}
+	if strings.Contains(response.Body.String(), "<form") || strings.Contains(response.Body.String(), "Submit") {
+		t.Errorf("completed quiz page should not offer answer submission:\n%s", response.Body.String())
+	}
+
+	getResponse := httptest.NewRecorder()
+	handler.ServeHTTP(getResponse, httptest.NewRequest(http.MethodGet, "/", nil))
+	if !strings.Contains(getResponse.Body.String(), "Quiz complete") {
+		t.Errorf("GET / after completion should show the completion page:\n%s", getResponse.Body.String())
+	}
+	if strings.Contains(getResponse.Body.String(), "<form") {
+		t.Errorf("GET / after completion should not show the answer form:\n%s", getResponse.Body.String())
 	}
 }

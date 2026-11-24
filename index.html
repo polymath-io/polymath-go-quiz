@@ -11,10 +11,12 @@
 			<li>{{.}}</li>
 		{{end}}
 	</ul>
-	<form method="POST" action="/">
-  		<input name="answer" required>
-  		<button type="submit">Submit</button>
-	</form>
+	{{if .ShowForm}}
+		<form method="POST" action="/">
+			<input name="answer" required>
+			<button type="submit">Submit</button>
+		</form>
+	{{end}}
 
 	{{if .Processed}}
 		<p>{{.Processed}}</p>

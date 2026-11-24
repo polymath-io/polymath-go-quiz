@@ -18,6 +18,7 @@ type PageData struct {
 	Prompt    string
 	Options   []string
 	Processed string
+	ShowForm  bool
 }
 
 func showStatus(quiz Quiz) string {
@@ -45,6 +46,14 @@ func newQuizHandler(quiz Quiz) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		if quiz.Status.Phase == QuizPhaseDone {
+			renderQuizPage(w, PageData{
+				Prompt:    "Quiz complete",
+				Processed: showStatus(quiz),
+			})
+			return
+		}
+
 		if quiz.Status.CurrentQuestion < 0 || quiz.Status.CurrentQuestion >= len(quiz.Spec.Questions) {
 			http.Error(w, "No current quiz question", http.StatusInternalServerError)
 			return
@@ -52,8 +61,9 @@ func newQuizHandler(quiz Quiz) http.Handler {
 
 		question := quiz.Spec.Questions[quiz.Status.CurrentQuestion]
 		data := PageData{
-			Prompt:  question.Prompt,
-			Options: question.Options,
+			Prompt:   question.Prompt,
+			Options:  question.Options,
+			ShowForm: true,
 		}
 		renderQuizPage(w, data)
 	})
@@ -75,8 +85,6 @@ func newQuizHandler(quiz Quiz) http.Handler {
 			quiz.Status.Feedback = "Best luck on next"
 		}
 
-		data := PageData{Prompt: question.Prompt, Options: question.Options, Processed: showStatus(quiz)}
-
 		feedback := showStatus(quiz) // save Correct/Incorrect before changing the phase
 
 		if quiz.Status.CurrentQuestion+1 < len(quiz.Spec.Questions) {
@@ -84,13 +92,21 @@ func newQuizHandler(quiz Quiz) http.Handler {
 			quiz.Status.Phase = QuizPhasePending
 
 			next := quiz.Spec.Questions[quiz.Status.CurrentQuestion]
-			data = PageData{Prompt: next.Prompt, Options: next.Options, Processed: feedback}
+			data := PageData{
+				Prompt:    next.Prompt,
+				Options:   next.Options,
+				Processed: feedback,
+				ShowForm:  true,
+			}
+			renderQuizPage(w, data)
 		} else {
 			quiz.Status.Phase = QuizPhaseDone
-			data = PageData{Prompt: "Quiz complete", Processed: feedback}
+			data := PageData{
+				Prompt:    "Quiz complete",
+				Processed: feedback + showStatus(quiz),
+			}
+			renderQuizPage(w, data)
 		}
-
-		renderQuizPage(w, data)
 	})
 
 	return mux
