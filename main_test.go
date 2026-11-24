@@ -9,7 +9,6 @@ import (
 	"testing"
 )
 
-
 type errorReader struct {
 	err error
 }
@@ -155,7 +154,6 @@ func runMainWithInput(t *testing.T, input string) string {
 
 	return captureStdout(t, main)
 }
-
 
 func Test_QuizIntegration(t *testing.T) {
 	output := runMainWithInput(t, "red\nnot-blue\n")

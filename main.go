@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"log"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -136,4 +138,10 @@ func main() {
 		}
 	}
 
+	http.HandleFunc("GET /{$}", getHandler)
+	http.HandleFunc("POST /{$}", postHandler)
+
+	// start the server
+	fmt.Println("Server listening on http://localhost:8083")
+	log.Fatal(http.ListenAndServe(":8083", nil))
 }
