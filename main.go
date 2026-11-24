@@ -22,6 +22,7 @@ type QuizStatus struct {
 	CurrentQuestion int
 	Phase           string
 	Feedback        string
+	LastResult      string // feedback for the previous answer, shown on the next GET
 }
 
 type Quiz struct {

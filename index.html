@@ -18,8 +18,14 @@
 		</form>
 	{{end}}
 
-	{{if .Processed}}
-		<p>{{.Processed}}</p>
+	{{if .ShowRestart}}
+		<form method="POST" action="/restart">
+			<button type="submit">Restart quiz</button>
+		</form>
+	{{end}}
+
+	{{range .Messages}}
+		{{if .}}<p>{{.}}</p>{{end}}
 	{{end}}
 </body>
 </html>
