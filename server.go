@@ -75,11 +75,21 @@ func newQuizHandler(quiz Quiz) http.Handler {
 			quiz.Status.Feedback = "Best luck on next"
 		}
 
-		data := PageData{
-			Prompt:    question.Prompt,
-			Options:   question.Options,
-			Processed: showStatus(quiz),
+		data := PageData{Prompt: question.Prompt, Options: question.Options, Processed: showStatus(quiz)}
+
+		feedback := showStatus(quiz) // save Correct/Incorrect before changing the phase
+
+		if quiz.Status.CurrentQuestion+1 < len(quiz.Spec.Questions) {
+			quiz.Status.CurrentQuestion++
+			quiz.Status.Phase = QuizPhasePending
+
+			next := quiz.Spec.Questions[quiz.Status.CurrentQuestion]
+			data = PageData{Prompt: next.Prompt, Options: next.Options, Processed: feedback}
+		} else {
+			quiz.Status.Phase = QuizPhaseDone
+			data = PageData{Prompt: "Quiz complete", Processed: feedback}
 		}
+
 		renderQuizPage(w, data)
 	})
 
