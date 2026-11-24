@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 )
 
 type Question struct {
@@ -26,6 +27,7 @@ type QuizStatus struct {
 }
 
 type Quiz struct {
+	mu     sync.Mutex
 	Spec   QuizSpec
 	Status QuizStatus
 }
@@ -70,6 +72,11 @@ func main() {
 		},
 	}
 
+	csrfToken, err := generateCSRFToken()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	log.Println("Server listening on http://localhost:8083")
-	log.Fatal(http.ListenAndServe(":8083", newQuizHandler(quiz)))
+	log.Fatal(http.ListenAndServe(":8083", newQuizHandler(&quiz, csrfToken)))
 }
