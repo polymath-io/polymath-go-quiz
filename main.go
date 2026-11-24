@@ -1,12 +1,10 @@
 package main
 
 import (
-	"bufio"
-	"fmt"
-	"io"
-	"os"
+	"log"
+	"net/http"
 	"strings"
-	"time"
+	"sync"
 )
 
 type Question struct {
@@ -25,9 +23,11 @@ type QuizStatus struct {
 	CurrentQuestion int
 	Phase           string
 	Feedback        string
+	LastResult      string // feedback for the previous answer, shown on the next GET
 }
 
 type Quiz struct {
+	mu     sync.Mutex
 	Spec   QuizSpec
 	Status QuizStatus
 }
@@ -47,24 +47,6 @@ func newQuestion(prompt string, correctAnswer string, options []string) Question
 	}
 }
 
-func getAnswer(question Question, input *bufio.Scanner) (string, error) {
-	fmt.Println(question.Prompt)
-	fmt.Println("Options:")
-	for _, option := range question.Options {
-		fmt.Printf("  - %s\n", option)
-	}
-	fmt.Print("> ")
-	if !input.Scan() {
-		if err := input.Err(); err != nil {
-			return "", err
-		}
-
-		return "", io.EOF
-	}
-
-	return strings.TrimSpace(input.Text()), nil
-}
-
 func isAnswerCorrect(question Question, userAns string) bool {
 	if strings.ToLower(userAns) == strings.ToLower(question.CorrectAnswer) {
 		return true
@@ -73,23 +55,10 @@ func isAnswerCorrect(question Question, userAns string) bool {
 	return false
 }
 
-func showStatus(quiz Quiz) {
-	if quiz.Status.Phase == QuizPhasePending || quiz.Status.Phase == QuizPhaseDone {
-		fmt.Printf("Phase: %s\n", quiz.Status.Phase)
-	} else {
-		fmt.Printf("Phase: %s\tMessage: %s\n", quiz.Status.Phase, quiz.Status.Feedback)
-	}
-
-}
-
 func main() {
-
-	input := bufio.NewScanner(os.Stdin)
-
 	q1 := newQuestion("first color?", "red", []string{"blue", "white", "red"})
 	q2 := newQuestion("second color?", "blue", []string{"blue", "white", "red"})
 
-	// create a Quiz
 	quiz := Quiz{
 		Spec: QuizSpec{
 			Questions:    []Question{q1, q2},
@@ -103,37 +72,11 @@ func main() {
 		},
 	}
 
-	for _, q := range quiz.Spec.Questions {
-		showStatus(quiz)
-		quiz.Status.CurrentQuestion++
-
-		// prompt question and get answer
-		answer, err := getAnswer(q, input)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "Could not read answer:", err)
-			return
-		}
-
-		quiz.Spec.UserAnswer = answer
-		quiz.Spec.SubmissionId++
-
-		if isAnswerCorrect(q, answer) {
-			quiz.Status.Feedback = "well done"
-			quiz.Status.Phase = QuizPhaseCorrect
-		} else {
-			quiz.Status.Phase = QuizPhaseIncorrect
-			quiz.Status.Feedback = "Best luck on next"
-		}
-
-		showStatus(quiz)
-
-		time.Sleep(time.Second * 1)
-		if quiz.Status.CurrentQuestion == len(quiz.Spec.Questions) {
-			quiz.Status.Phase = QuizPhaseDone
-			showStatus(quiz)
-		} else {
-			quiz.Status.Phase = QuizPhasePending
-		}
+	csrfToken, err := generateCSRFToken()
+	if err != nil {
+		log.Fatal(err)
 	}
 
+	log.Println("Server listening on http://localhost:8083")
+	log.Fatal(http.ListenAndServe(":8083", newQuizHandler(&quiz, csrfToken)))
 }

@@ -1,53 +1,14 @@
 package main
 
 import (
-	"bufio"
-	"errors"
-	"io"
-	"os"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
 
-
-type errorReader struct {
-	err error
-}
-
-func (r errorReader) Read([]byte) (int, error) {
-	return 0, r.err
-}
-
-func captureStdout(t *testing.T, run func()) string {
-	t.Helper()
-
-	oldStdout := os.Stdout
-	reader, writer, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("create stdout pipe: %v", err)
-	}
-
-	os.Stdout = writer
-	defer func() {
-		os.Stdout = oldStdout
-	}()
-
-	run()
-
-	if err := writer.Close(); err != nil {
-		t.Fatalf("close stdout pipe writer: %v", err)
-	}
-	os.Stdout = oldStdout
-
-	output, err := io.ReadAll(reader)
-	if err != nil {
-		t.Fatalf("read captured stdout: %v", err)
-	}
-	if err := reader.Close(); err != nil {
-		t.Fatalf("close stdout pipe reader: %v", err)
-	}
-	return string(output)
-}
+const testCSRFToken = "test-csrf-token"
 
 func Test_IsAnswerCorrect(t *testing.T) {
 	question := Question{CorrectAnswer: "red"}
@@ -71,108 +32,237 @@ func Test_IsAnswerCorrect(t *testing.T) {
 	}
 }
 
-func Test_GetAnswer(t *testing.T) {
-	scannerErr := errors.New("input failed")
-	tests := []struct {
-		name       string
-		question   Question
-		input      io.Reader
-		wantAnswer string
-		wantErr    error
-		wantOutput string
-	}{
-		{
-			name:       "trims input and formats prompt",
-			question:   Question{Prompt: "Pick a color", Options: []string{"red", "blue"}},
-			input:      strings.NewReader("  red  \n"),
-			wantAnswer: "red",
-			wantOutput: "Pick a color\nOptions:\n  - red\n  - blue\n> ",
-		},
-		{
-			name:       "returns EOF when input is empty",
-			question:   Question{},
-			input:      strings.NewReader(""),
-			wantErr:    io.EOF,
-			wantOutput: "\nOptions:\n> ",
-		},
-		{
-			name:       "returns scanner error",
-			question:   Question{},
-			input:      errorReader{err: scannerErr},
-			wantErr:    scannerErr,
-			wantOutput: "\nOptions:\n> ",
+func Test_QuizHandlerDisplaysFirstQuestion(t *testing.T) {
+	quiz := Quiz{
+		Spec: QuizSpec{
+			Questions: []Question{{
+				Prompt:  "Pick a color",
+				Options: []string{"red", "blue"},
+			}},
 		},
 	}
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	response := httptest.NewRecorder()
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			var answer string
-			var answerErr error
-			output := captureStdout(t, func() {
-				input := bufio.NewScanner(test.input)
-				answer, answerErr = getAnswer(test.question, input)
-			})
+	newQuizHandler(&quiz, testCSRFToken).ServeHTTP(response, request)
 
-			if answer != test.wantAnswer {
-				t.Errorf("getAnswer returned %q, want %q", answer, test.wantAnswer)
-			}
-			if test.wantErr != nil {
-				if !errors.Is(answerErr, test.wantErr) {
-					t.Errorf("getAnswer error = %v, want %v", answerErr, test.wantErr)
-				}
-			} else if answerErr != nil {
-				t.Errorf("getAnswer returned an unexpected error: %v", answerErr)
-			}
-			if output != test.wantOutput {
-				t.Errorf("getAnswer output = %q, want %q", output, test.wantOutput)
-			}
-		})
+	if response.Code != http.StatusOK {
+		t.Fatalf("GET / status = %d, want %d", response.Code, http.StatusOK)
 	}
-}
-
-func runMainWithInput(t *testing.T, input string) string {
-	t.Helper()
-
-	oldStdin := os.Stdin
-	reader, writer, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("create stdin pipe: %v", err)
+	if got := response.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+		t.Errorf("Content-Type = %q, want text/html; charset=utf-8", got)
 	}
-
-	os.Stdin = reader
-	t.Cleanup(func() {
-		os.Stdin = oldStdin
-		_ = reader.Close()
-		_ = writer.Close()
-	})
-
-	if _, err := io.WriteString(writer, input); err != nil {
-		t.Fatalf("write quiz input: %v", err)
-	}
-	if err := writer.Close(); err != nil {
-		t.Fatalf("close stdin pipe writer: %v", err)
-	}
-
-	return captureStdout(t, main)
-}
-
-
-func Test_QuizIntegration(t *testing.T) {
-	output := runMainWithInput(t, "red\nnot-blue\n")
-
 	for _, want := range []string{
-		"first color?",
-		"second color?",
-		"Phase: Correct\tMessage: well done",
-		"Phase: Incorrect\tMessage: Best luck on next",
-		"Phase: Done",
+		"Pick a color",
+		"<li>red</li>",
+		"<li>blue</li>",
+		`name="csrf_token" value="` + testCSRFToken + `"`,
 	} {
-		if !strings.Contains(output, want) {
-			t.Errorf("quiz output does not contain %q:\n%s", want, output)
+		if !strings.Contains(response.Body.String(), want) {
+			t.Errorf("GET / body does not contain %q:\n%s", want, response.Body.String())
 		}
 	}
+}
 
-	if strings.Index(output, "second color?") < strings.Index(output, "first color?") {
-		t.Errorf("second question appeared before first:\n%s", output)
+func Test_QuizHandlerRejectsQuizWithoutQuestions(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	response := httptest.NewRecorder()
+
+	newQuizHandler(&Quiz{}, testCSRFToken).ServeHTTP(response, request)
+
+	if response.Code != http.StatusInternalServerError {
+		t.Errorf("GET / status = %d, want %d", response.Code, http.StatusInternalServerError)
+	}
+}
+
+func postAnswer(handler http.Handler, answer string) *httptest.ResponseRecorder {
+	return postForm(handler, "/", url.Values{
+		"answer":     {answer},
+		"csrf_token": {testCSRFToken},
+	})
+}
+
+func postForm(handler http.Handler, target string, values url.Values) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(http.MethodPost, target, strings.NewReader(values.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	return response
+}
+
+func getPage(handler http.Handler) *httptest.ResponseRecorder {
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
+	return response
+}
+
+func Test_QuizHandlerRedirectsAndAdvancesAfterAnswer(t *testing.T) {
+	quiz := Quiz{
+		Spec: QuizSpec{
+			Questions: []Question{
+				{Prompt: "Pick a color", CorrectAnswer: "red", Options: []string{"red", "blue"}},
+				{Prompt: "Pick an animal", Options: []string{"cat", "dog"}},
+			},
+		},
+	}
+	handler := newQuizHandler(&quiz, testCSRFToken)
+
+	response := postAnswer(handler, "RED")
+	if response.Code != http.StatusSeeOther {
+		t.Fatalf("POST / status = %d, want %d", response.Code, http.StatusSeeOther)
+	}
+	if got := response.Header().Get("Location"); got != "/" {
+		t.Errorf("Location = %q, want /", got)
+	}
+
+	// Refreshing (repeating the GET) must not advance the quiz again.
+	for i := 0; i < 2; i++ {
+		body := getPage(handler).Body.String()
+		for _, want := range []string{"Pick an animal", "Phase: Correct", "well done"} {
+			if !strings.Contains(body, want) {
+				t.Errorf("GET / body does not contain %q:\n%s", want, body)
+			}
+		}
+	}
+}
+
+func Test_QuizHandlerShowsCompletionAfterLastAnswer(t *testing.T) {
+	quiz := Quiz{
+		Spec: QuizSpec{
+			Questions: []Question{{Prompt: "Pick a color", CorrectAnswer: "red", Options: []string{"red", "blue"}}},
+		},
+	}
+	handler := newQuizHandler(&quiz, testCSRFToken)
+
+	if response := postAnswer(handler, "blue"); response.Code != http.StatusSeeOther {
+		t.Fatalf("POST / status = %d, want %d", response.Code, http.StatusSeeOther)
+	}
+
+	body := getPage(handler).Body.String()
+	for _, want := range []string{"Quiz complete", "Phase: Incorrect", "Best luck on next", "Phase: Done"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("GET / body does not contain %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, `<form method="POST" action="/">`) {
+		t.Errorf("completed quiz page should not show the answer form (restart form is fine):\n%s", body)
+	}
+
+	// Posting after completion is ignored.
+	if response := postAnswer(handler, "red"); response.Code != http.StatusSeeOther {
+		t.Errorf("POST / after completion status = %d, want %d", response.Code, http.StatusSeeOther)
+	}
+	if !strings.Contains(getPage(handler).Body.String(), "Phase: Incorrect") {
+		t.Errorf("answer after completion should not change the result")
+	}
+}
+
+func Test_QuizHandlerRestartResetsQuiz(t *testing.T) {
+	quiz := Quiz{
+		Spec: QuizSpec{
+			Questions: []Question{{Prompt: "Pick a color", CorrectAnswer: "red", Options: []string{"red", "blue"}}},
+		},
+	}
+	handler := newQuizHandler(&quiz, testCSRFToken)
+	postAnswer(handler, "red")
+
+	if body := getPage(handler).Body.String(); !strings.Contains(body, "Restart quiz") {
+		t.Errorf("completion page should offer a restart button:\n%s", body)
+	}
+
+	response := postForm(handler, "/restart", url.Values{"csrf_token": {testCSRFToken}})
+	if response.Code != http.StatusSeeOther {
+		t.Fatalf("POST /restart status = %d, want %d", response.Code, http.StatusSeeOther)
+	}
+
+	body := getPage(handler).Body.String()
+	if !strings.Contains(body, "Pick a color") || !strings.Contains(body, `<form method="POST" action="/">`) {
+		t.Errorf("restart should show the first question again:\n%s", body)
+	}
+	if strings.Contains(body, "Phase:") || strings.Contains(body, "Restart quiz") {
+		t.Errorf("restart should clear previous feedback:\n%s", body)
+	}
+}
+
+func Test_QuizHandlerInstancesShareQuizState(t *testing.T) {
+	quiz := Quiz{
+		Spec: QuizSpec{
+			Questions: []Question{
+				{Prompt: "Pick a color", CorrectAnswer: "red", Options: []string{"red", "blue"}},
+				{Prompt: "Pick an animal", Options: []string{"cat", "dog"}},
+			},
+		},
+	}
+	firstHandler := newQuizHandler(&quiz, testCSRFToken)
+	secondHandler := newQuizHandler(&quiz, testCSRFToken)
+
+	if response := postAnswer(firstHandler, "red"); response.Code != http.StatusSeeOther {
+		t.Fatalf("POST / status = %d, want %d", response.Code, http.StatusSeeOther)
+	}
+
+	body := getPage(secondHandler).Body.String()
+	if !strings.Contains(body, "Pick an animal") {
+		t.Errorf("second handler did not observe the shared quiz state:\n%s", body)
+	}
+	if quiz.Spec.SubmissionId != 1 {
+		t.Errorf("SubmissionId = %d, want 1", quiz.Spec.SubmissionId)
+	}
+}
+
+func Test_QuizHandlerRejectsAnswerOutsideOptions(t *testing.T) {
+	quiz := Quiz{
+		Spec: QuizSpec{
+			Questions: []Question{
+				{Prompt: "Pick a color", CorrectAnswer: "red", Options: []string{"red", "blue"}},
+				{Prompt: "Pick an animal", Options: []string{"cat", "dog"}},
+			},
+		},
+	}
+	handler := newQuizHandler(&quiz, testCSRFToken)
+
+	if response := postAnswer(handler, "green"); response.Code != http.StatusBadRequest {
+		t.Fatalf("POST / with an unavailable answer status = %d, want %d", response.Code, http.StatusBadRequest)
+	}
+	response := postAnswer(handler, "green")
+	for _, want := range []string{"Pick a color", "<li>red</li>", "Please choose one of the listed options.", `name="answer"`} {
+		if !strings.Contains(response.Body.String(), want) {
+			t.Errorf("invalid answer page does not contain %q:\n%s", want, response.Body.String())
+		}
+	}
+	if got := response.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+		t.Errorf("Content-Type = %q, want text/html; charset=utf-8", got)
+	}
+	if !strings.Contains(getPage(handler).Body.String(), "Pick a color") {
+		t.Error("invalid answer should not advance the quiz")
+	}
+	if quiz.Spec.SubmissionId != 0 || quiz.Spec.UserAnswer != "" {
+		t.Errorf("invalid answer changed quiz state: SubmissionId=%d UserAnswer=%q", quiz.Spec.SubmissionId, quiz.Spec.UserAnswer)
+	}
+}
+
+func Test_QuizHandlerRequiresCSRFTokenForStateChanges(t *testing.T) {
+	quiz := Quiz{
+		Spec: QuizSpec{
+			Questions: []Question{
+				{Prompt: "Pick a color", CorrectAnswer: "red", Options: []string{"red", "blue"}},
+				{Prompt: "Pick an animal", Options: []string{"cat", "dog"}},
+			},
+		},
+	}
+	handler := newQuizHandler(&quiz, testCSRFToken)
+
+	if response := postForm(handler, "/", url.Values{"answer": {"red"}}); response.Code != http.StatusForbidden {
+		t.Fatalf("POST / without CSRF token status = %d, want %d", response.Code, http.StatusForbidden)
+	}
+	if !strings.Contains(getPage(handler).Body.String(), "Pick a color") {
+		t.Fatal("POST / without CSRF token should not advance the quiz")
+	}
+
+	postAnswer(handler, "red")
+	if response := postForm(handler, "/restart", url.Values{"csrf_token": {"invalid"}}); response.Code != http.StatusForbidden {
+		t.Fatalf("POST /restart with invalid CSRF token status = %d, want %d", response.Code, http.StatusForbidden)
+	}
+	if !strings.Contains(getPage(handler).Body.String(), "Pick an animal") {
+		t.Error("POST /restart with invalid CSRF token should not reset the quiz")
 	}
 }

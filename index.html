@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Simple Quiz I/O</title>
+</head>
+<body>
+	<h1>Simple Quiz</h1>
+	<h2>{{.Prompt}}</h2>
+	<ul>
+		{{range .Options}}
+			<li>{{.}}</li>
+		{{end}}
+	</ul>
+	{{if .ShowForm}}
+		<form method="POST" action="/">
+			<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+			<input name="answer" required>
+			<button type="submit">Submit</button>
+		</form>
+	{{end}}
+
+	{{if .ShowRestart}}
+		<form method="POST" action="/restart">
+			<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+			<button type="submit">Restart quiz</button>
+		</form>
+	{{end}}
+
+	{{range .Messages}}
+		{{if .}}<p>{{.}}</p>{{end}}
+	{{end}}
+</body>
+</html>
