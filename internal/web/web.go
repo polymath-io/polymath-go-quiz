@@ -1,4 +1,4 @@
-package main
+package web
 
 import (
 	"bytes"
@@ -10,7 +10,8 @@ import (
 	"html/template"
 	"log"
 	"net/http"
-	"strings"
+
+	"quiz.com/internal/quiz"
 )
 
 //go:embed index.html
@@ -27,15 +28,7 @@ type PageData struct {
 	CSRFToken   string
 }
 
-func showStatus(status QuizStatus) string {
-	if status.Phase == QuizPhasePending || status.Phase == QuizPhaseDone {
-		return fmt.Sprintf("Phase: %s", status.Phase)
-	}
-	return fmt.Sprintf("Phase: %s\tMessage: %s", status.Phase, status.Feedback)
-
-}
-
-func generateCSRFToken() (string, error) {
+func GenerateCSRFToken() (string, error) {
 	token := make([]byte, 32)
 	if _, err := rand.Read(token); err != nil {
 		return "", fmt.Errorf("generate CSRF token: %w", err)
@@ -53,15 +46,6 @@ func requireValidCSRFToken(w http.ResponseWriter, r *http.Request, expected stri
 		return false
 	}
 	return true
-}
-
-func isAnswerOption(options []string, answer string) bool {
-	for _, option := range options {
-		if strings.EqualFold(option, answer) {
-			return true
-		}
-	}
-	return false
 }
 
 func renderQuizPage(w http.ResponseWriter, data PageData) {
@@ -82,33 +66,32 @@ func renderQuizPageWithStatus(w http.ResponseWriter, status int, data PageData) 
 	}
 }
 
-func newQuizHandler(quiz *Quiz, csrfToken string) http.Handler {
+func NewQuizHandler(q *quiz.Quiz, csrfToken string) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		quiz.mu.Lock()
-		defer quiz.mu.Unlock()
+		spec, status := q.Snapshot()
 
-		if quiz.Status.Phase == QuizPhaseDone {
+		if status.Phase == quiz.QuizPhaseDone {
 			renderQuizPage(w, PageData{
 				Prompt:      "Quiz complete",
-				Messages:    []string{quiz.Status.LastResult, showStatus(quiz.Status)},
+				Messages:    []string{status.LastResult, quiz.ShowStatus(status)},
 				ShowRestart: true,
 				CSRFToken:   csrfToken,
 			})
 			return
 		}
 
-		if quiz.Status.CurrentQuestion < 0 || quiz.Status.CurrentQuestion >= len(quiz.Spec.Questions) {
+		if status.CurrentQuestion < 0 || status.CurrentQuestion >= len(spec.Questions) {
 			http.Error(w, "No current quiz question", http.StatusInternalServerError)
 			return
 		}
 
-		question := quiz.Spec.Questions[quiz.Status.CurrentQuestion]
+		question := spec.Questions[status.CurrentQuestion]
 		renderQuizPage(w, PageData{
 			Prompt:    question.Prompt,
 			Options:   question.Options,
-			Messages:  []string{quiz.Status.LastResult},
+			Messages:  []string{status.LastResult},
 			ShowForm:  true,
 			CSRFToken: csrfToken,
 		})
@@ -119,65 +102,28 @@ func newQuizHandler(quiz *Quiz, csrfToken string) http.Handler {
 			return
 		}
 
-		quiz.mu.Lock()
-		defer quiz.mu.Unlock()
-
-		if quiz.Status.Phase == QuizPhaseDone {
-			http.Redirect(w, r, "/", http.StatusSeeOther)
-			return
-		}
-		if quiz.Status.CurrentQuestion < 0 || quiz.Status.CurrentQuestion >= len(quiz.Spec.Questions) {
+		outcome := q.SubmitAnswer(r.Form.Get("answer"))
+		switch outcome.Result {
+		case quiz.SubmitNoQuestion:
 			http.Error(w, "No current quiz question", http.StatusInternalServerError)
-			return
-		}
-
-		question := quiz.Spec.Questions[quiz.Status.CurrentQuestion]
-		received := r.Form.Get("answer")
-		if !isAnswerOption(question.Options, received) {
+		case quiz.SubmitInvalidOption:
 			renderQuizPageWithStatus(w, http.StatusBadRequest, PageData{
-				Prompt:    question.Prompt,
-				Options:   question.Options,
-				Messages:  []string{"Please choose one of the listed options.", quiz.Status.LastResult},
+				Prompt:    outcome.Question.Prompt,
+				Options:   outcome.Question.Options,
+				Messages:  []string{"Please choose one of the listed options.", outcome.LastResult},
 				ShowForm:  true,
 				CSRFToken: csrfToken,
 			})
-			return
+		default:
+			http.Redirect(w, r, "/", http.StatusSeeOther)
 		}
-
-		quiz.Spec.UserAnswer = received
-		quiz.Spec.SubmissionId++
-
-		if isAnswerCorrect(question, received) {
-			quiz.Status.Phase = QuizPhaseCorrect
-			quiz.Status.Feedback = "well done"
-		} else {
-			quiz.Status.Phase = QuizPhaseIncorrect
-			quiz.Status.Feedback = "Best luck on next"
-		}
-		quiz.Status.LastResult = showStatus(quiz.Status) // keep Correct/Incorrect before moving on
-
-		if quiz.Status.CurrentQuestion+1 < len(quiz.Spec.Questions) {
-			quiz.Status.CurrentQuestion++
-			quiz.Status.Phase = QuizPhasePending
-		} else {
-			quiz.Status.Phase = QuizPhaseDone
-		}
-
-		http.Redirect(w, r, "/", http.StatusSeeOther)
 	})
 
 	mux.HandleFunc("POST /restart", func(w http.ResponseWriter, r *http.Request) {
 		if !requireValidCSRFToken(w, r, csrfToken) {
 			return
 		}
-
-		quiz.mu.Lock()
-		defer quiz.mu.Unlock()
-
-		quiz.Spec.UserAnswer = ""
-		quiz.Spec.SubmissionId = 0
-		quiz.Status = QuizStatus{Phase: QuizPhasePending}
-
+		q.Restart()
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	})
 

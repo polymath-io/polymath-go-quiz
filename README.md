@@ -41,7 +41,7 @@ Added beyond the original plan:
 
 #### Tasks
 
-1. Move startup into cmd/quiz-server and the quiz logic, HTTP handling, and embedded HTML into the internal packages above. No behavior change, tests stay green, separate commit.
+1. ~~Move startup into cmd/quiz-server and the quiz logic, HTTP handling, and embedded HTML into the internal packages above.~~
 2. Add the quiz/session ID to the quiz state and handlers.
 3. Define the quiz API in TypeSpec.
 4. Generate the OpenAPI specification from TypeSpec.

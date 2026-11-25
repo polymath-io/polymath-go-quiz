@@ -1,4 +1,4 @@
-package main
+package web
 
 import (
 	"net/http"
@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	. "quiz.com/internal/quiz"	
 )
 
 const testCSRFToken = "test-csrf-token"
@@ -25,7 +27,7 @@ func Test_IsAnswerCorrect(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := isAnswerCorrect(question, test.answer); got != test.expected {
+			if got := IsAnswerCorrect(question, test.answer); got != test.expected {
 				t.Errorf("isAnswerCorrect(%q) = %t, want %t", test.answer, got, test.expected)
 			}
 		})
@@ -44,7 +46,7 @@ func Test_QuizHandlerDisplaysFirstQuestion(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
 	response := httptest.NewRecorder()
 
-	newQuizHandler(&quiz, testCSRFToken).ServeHTTP(response, request)
+	NewQuizHandler(&quiz, testCSRFToken).ServeHTTP(response, request)
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("GET / status = %d, want %d", response.Code, http.StatusOK)
@@ -68,7 +70,7 @@ func Test_QuizHandlerRejectsQuizWithoutQuestions(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
 	response := httptest.NewRecorder()
 
-	newQuizHandler(&Quiz{}, testCSRFToken).ServeHTTP(response, request)
+	NewQuizHandler(&Quiz{}, testCSRFToken).ServeHTTP(response, request)
 
 	if response.Code != http.StatusInternalServerError {
 		t.Errorf("GET / status = %d, want %d", response.Code, http.StatusInternalServerError)
@@ -105,7 +107,7 @@ func Test_QuizHandlerRedirectsAndAdvancesAfterAnswer(t *testing.T) {
 			},
 		},
 	}
-	handler := newQuizHandler(&quiz, testCSRFToken)
+	handler := NewQuizHandler(&quiz, testCSRFToken)
 
 	response := postAnswer(handler, "RED")
 	if response.Code != http.StatusSeeOther {
@@ -132,7 +134,7 @@ func Test_QuizHandlerShowsCompletionAfterLastAnswer(t *testing.T) {
 			Questions: []Question{{Prompt: "Pick a color", CorrectAnswer: "red", Options: []string{"red", "blue"}}},
 		},
 	}
-	handler := newQuizHandler(&quiz, testCSRFToken)
+	handler := NewQuizHandler(&quiz, testCSRFToken)
 
 	if response := postAnswer(handler, "blue"); response.Code != http.StatusSeeOther {
 		t.Fatalf("POST / status = %d, want %d", response.Code, http.StatusSeeOther)
@@ -163,7 +165,7 @@ func Test_QuizHandlerRestartResetsQuiz(t *testing.T) {
 			Questions: []Question{{Prompt: "Pick a color", CorrectAnswer: "red", Options: []string{"red", "blue"}}},
 		},
 	}
-	handler := newQuizHandler(&quiz, testCSRFToken)
+	handler := NewQuizHandler(&quiz, testCSRFToken)
 	postAnswer(handler, "red")
 
 	if body := getPage(handler).Body.String(); !strings.Contains(body, "Restart quiz") {
@@ -193,8 +195,8 @@ func Test_QuizHandlerInstancesShareQuizState(t *testing.T) {
 			},
 		},
 	}
-	firstHandler := newQuizHandler(&quiz, testCSRFToken)
-	secondHandler := newQuizHandler(&quiz, testCSRFToken)
+	firstHandler := NewQuizHandler(&quiz, testCSRFToken)
+	secondHandler := NewQuizHandler(&quiz, testCSRFToken)
 
 	if response := postAnswer(firstHandler, "red"); response.Code != http.StatusSeeOther {
 		t.Fatalf("POST / status = %d, want %d", response.Code, http.StatusSeeOther)
@@ -218,7 +220,7 @@ func Test_QuizHandlerRejectsAnswerOutsideOptions(t *testing.T) {
 			},
 		},
 	}
-	handler := newQuizHandler(&quiz, testCSRFToken)
+	handler := NewQuizHandler(&quiz, testCSRFToken)
 
 	if response := postAnswer(handler, "green"); response.Code != http.StatusBadRequest {
 		t.Fatalf("POST / with an unavailable answer status = %d, want %d", response.Code, http.StatusBadRequest)
@@ -249,7 +251,7 @@ func Test_QuizHandlerRequiresCSRFTokenForStateChanges(t *testing.T) {
 			},
 		},
 	}
-	handler := newQuizHandler(&quiz, testCSRFToken)
+	handler := NewQuizHandler(&quiz, testCSRFToken)
 
 	if response := postForm(handler, "/", url.Values{"answer": {"red"}}); response.Code != http.StatusForbidden {
 		t.Fatalf("POST / without CSRF token status = %d, want %d", response.Code, http.StatusForbidden)
