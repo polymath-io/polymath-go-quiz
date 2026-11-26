@@ -26,6 +26,8 @@ type PageData struct {
 	ShowForm    bool
 	ShowRestart bool
 	CSRFToken   string
+	AnswerURL   string
+	RestartURL  string
 }
 
 func GenerateCSRFToken() (string, error) {
@@ -66,10 +68,30 @@ func renderQuizPageWithStatus(w http.ResponseWriter, status int, data PageData) 
 	}
 }
 
-func NewQuizHandler(q *quiz.Quiz, csrfToken string) http.Handler {
+func NewSessionQuizHandler(store *QuizStore) http.Handler {
 	mux := http.NewServeMux()
+	dispatch := func(w http.ResponseWriter, r *http.Request) {
+		session, ok := store.Get(r.PathValue("id"))
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		newQuizHandler(session.Quiz, session.CSRFToken, session.ID).ServeHTTP(w, r)
+	}
 
-	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /quizzes/{id}", dispatch)
+	mux.HandleFunc("POST /quizzes/{id}/answers", dispatch)
+	mux.HandleFunc("POST /quizzes/{id}/restart", dispatch)
+	return mux
+}
+
+func newQuizHandler(q *quiz.Quiz, csrfToken, sessionID string) http.Handler {
+	mux := http.NewServeMux()
+	quizURL := "/quizzes/" + sessionID
+	answerURL := quizURL + "/answers"
+	restartURL := quizURL + "/restart"
+
+	mux.HandleFunc("GET /quizzes/{id}", func(w http.ResponseWriter, r *http.Request) {
 		spec, status := q.Snapshot()
 
 		if status.Phase == quiz.QuizPhaseDone {
@@ -78,6 +100,7 @@ func NewQuizHandler(q *quiz.Quiz, csrfToken string) http.Handler {
 				Messages:    []string{status.LastResult, quiz.ShowStatus(status)},
 				ShowRestart: true,
 				CSRFToken:   csrfToken,
+				RestartURL:  restartURL,
 			})
 			return
 		}
@@ -94,10 +117,11 @@ func NewQuizHandler(q *quiz.Quiz, csrfToken string) http.Handler {
 			Messages:  []string{status.LastResult},
 			ShowForm:  true,
 			CSRFToken: csrfToken,
+			AnswerURL: answerURL,
 		})
 	})
 
-	mux.HandleFunc("POST /{$}", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /quizzes/{id}/answers", func(w http.ResponseWriter, r *http.Request) {
 		if !requireValidCSRFToken(w, r, csrfToken) {
 			return
 		}
@@ -113,18 +137,19 @@ func NewQuizHandler(q *quiz.Quiz, csrfToken string) http.Handler {
 				Messages:  []string{"Please choose one of the listed options.", outcome.LastResult},
 				ShowForm:  true,
 				CSRFToken: csrfToken,
+				AnswerURL: answerURL,
 			})
 		default:
-			http.Redirect(w, r, "/", http.StatusSeeOther)
+			http.Redirect(w, r, quizURL, http.StatusSeeOther)
 		}
 	})
 
-	mux.HandleFunc("POST /restart", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /quizzes/{id}/restart", func(w http.ResponseWriter, r *http.Request) {
 		if !requireValidCSRFToken(w, r, csrfToken) {
 			return
 		}
 		q.Restart()
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+		http.Redirect(w, r, quizURL, http.StatusSeeOther)
 	})
 
 	return mux

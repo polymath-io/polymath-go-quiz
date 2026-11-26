@@ -7,13 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	. "quiz.com/internal/quiz"	
+	"quiz.com/internal/quiz"
 )
 
-const testCSRFToken = "test-csrf-token"
-
 func Test_IsAnswerCorrect(t *testing.T) {
-	question := Question{CorrectAnswer: "red"}
+	question := quiz.Question{CorrectAnswer: "red"}
 
 	tests := []struct {
 		name     string
@@ -25,62 +23,377 @@ func Test_IsAnswerCorrect(t *testing.T) {
 		{name: "incorrect answer", answer: "blue", expected: false},
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if got := IsAnswerCorrect(question, test.answer); got != test.expected {
-				t.Errorf("isAnswerCorrect(%q) = %t, want %t", test.answer, got, test.expected)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := quiz.IsAnswerCorrect(question, tt.answer); got != tt.expected {
+				t.Errorf("IsAnswerCorrect(%q) = %t, want %t", tt.answer, got, tt.expected)
 			}
 		})
 	}
 }
 
-func Test_QuizHandlerDisplaysFirstQuestion(t *testing.T) {
-	quiz := Quiz{
-		Spec: QuizSpec{
-			Questions: []Question{{
+func Test_QuizHandlerGetQuiz(t *testing.T) {
+	tests := []struct {
+		name       string
+		questions  []quiz.Question
+		wantStatus int
+		wantBody   func(session *Session) []string
+	}{
+		{
+			name: "displays the first question",
+			questions: []quiz.Question{{
 				Prompt:  "Pick a color",
 				Options: []string{"red", "blue"},
 			}},
+			wantStatus: http.StatusOK,
+			wantBody: func(session *Session) []string {
+				return []string{
+					"Pick a color",
+					"<li>red</li>",
+					"<li>blue</li>",
+					`name="csrf_token" value="` + session.CSRFToken + `"`,
+					`action="` + quizPath(session, "/answers") + `"`,
+				}
+			},
+		},
+		{
+			name:       "rejects a quiz without questions",
+			questions:  nil,
+			wantStatus: http.StatusInternalServerError,
 		},
 	}
-	request := httptest.NewRequest(http.MethodGet, "/", nil)
-	response := httptest.NewRecorder()
 
-	NewQuizHandler(&quiz, testCSRFToken).ServeHTTP(response, request)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler, session := newSessionTestHandler(t, tt.questions)
+			response := getPage(handler, quizPath(session, ""))
 
-	if response.Code != http.StatusOK {
-		t.Fatalf("GET / status = %d, want %d", response.Code, http.StatusOK)
-	}
-	if got := response.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
-		t.Errorf("Content-Type = %q, want text/html; charset=utf-8", got)
-	}
-	for _, want := range []string{
-		"Pick a color",
-		"<li>red</li>",
-		"<li>blue</li>",
-		`name="csrf_token" value="` + testCSRFToken + `"`,
-	} {
-		if !strings.Contains(response.Body.String(), want) {
-			t.Errorf("GET / body does not contain %q:\n%s", want, response.Body.String())
-		}
-	}
-}
+			if response.Code != tt.wantStatus {
+				t.Fatalf("GET quiz status = %d, want %d", response.Code, tt.wantStatus)
+			}
 
-func Test_QuizHandlerRejectsQuizWithoutQuestions(t *testing.T) {
-	request := httptest.NewRequest(http.MethodGet, "/", nil)
-	response := httptest.NewRecorder()
+			if tt.wantBody == nil {
+				return
+			}
 
-	NewQuizHandler(&Quiz{}, testCSRFToken).ServeHTTP(response, request)
+			if got := response.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+				t.Errorf("Content-Type = %q, want text/html; charset=utf-8", got)
+			}
 
-	if response.Code != http.StatusInternalServerError {
-		t.Errorf("GET / status = %d, want %d", response.Code, http.StatusInternalServerError)
+			assertBody(t, "GET quiz", response.Body.String(), tt.wantBody(session), nil)
+		})
 	}
 }
 
-func postAnswer(handler http.Handler, answer string) *httptest.ResponseRecorder {
-	return postForm(handler, "/", url.Values{
+func Test_QuizHandlerAnswers(t *testing.T) {
+	colorThenAnimal := []quiz.Question{
+		{Prompt: "Pick a color", CorrectAnswer: "red", Options: []string{"red", "blue"}},
+		{Prompt: "Pick an animal", Options: []string{"cat", "dog"}},
+	}
+	colorOnly := colorThenAnimal[:1]
+
+	tests := []struct {
+		name            string
+		questions       []quiz.Question
+		prior           []string // answers submitted with a valid token before the one under test
+		answer          string
+		validToken      bool
+		wantStatus      int
+		wantRedirect    bool
+		wantResponse    func(session *Session) []string // POST response body
+		wantPage        func(session *Session) []string // GET quiz body afterwards
+		wantPageAbsent  func(session *Session) []string
+		wantSubmissions int
+	}{
+		{
+			name:         "correct answer in a different case advances",
+			questions:    colorThenAnimal,
+			answer:       "RED",
+			validToken:   true,
+			wantStatus:   http.StatusSeeOther,
+			wantRedirect: true,
+			wantPage: func(*Session) []string {
+				return []string{"Pick an animal", "Phase: Correct", "well done"}
+			},
+			wantSubmissions: 1,
+		},
+		{
+			name:         "incorrect answer on the last question completes the quiz",
+			questions:    colorOnly,
+			answer:       "blue",
+			validToken:   true,
+			wantStatus:   http.StatusSeeOther,
+			wantRedirect: true,
+			wantPage: func(session *Session) []string {
+				return []string{
+					"Quiz complete", "Phase: Incorrect", "Best luck on next", "Phase: Done",
+					`action="` + quizPath(session, "/restart") + `"`,
+				}
+			},
+			wantPageAbsent: func(session *Session) []string {
+				return []string{`action="` + quizPath(session, "/answers") + `"`}
+			},
+			wantSubmissions: 1,
+		},
+		{
+			name:         "answer after completion does not change the result",
+			questions:    colorOnly,
+			prior:        []string{"blue"},
+			answer:       "red",
+			validToken:   true,
+			wantStatus:   http.StatusSeeOther,
+			wantRedirect: true,
+			wantPage: func(*Session) []string {
+				return []string{"Phase: Incorrect"}
+			},
+			wantSubmissions: 1,
+		},
+		{
+			name:       "answer outside the options is rejected",
+			questions:  colorThenAnimal,
+			answer:     "green",
+			validToken: true,
+			wantStatus: http.StatusBadRequest,
+			wantResponse: func(session *Session) []string {
+				return []string{
+					"Pick a color",
+					"<li>red</li>",
+					"Please choose one of the listed options.",
+					`action="` + quizPath(session, "/answers") + `"`,
+				}
+			},
+			wantPage: func(*Session) []string {
+				return []string{"Pick a color"}
+			},
+			wantSubmissions: 0,
+		},
+		{
+			name:       "missing CSRF token is rejected",
+			questions:  colorThenAnimal,
+			answer:     "red",
+			validToken: false,
+			wantStatus: http.StatusForbidden,
+			wantPage: func(*Session) []string {
+				return []string{"Pick a color"}
+			},
+			wantSubmissions: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler, session := newSessionTestHandler(t, tt.questions)
+			for _, answer := range tt.prior {
+				postAnswer(handler, session, answer, session.CSRFToken)
+			}
+
+			token := ""
+			if tt.validToken {
+				token = session.CSRFToken
+			}
+
+			response := postAnswer(handler, session, tt.answer, token)
+
+			if response.Code != tt.wantStatus {
+				t.Fatalf("POST answer status = %d, want %d", response.Code, tt.wantStatus)
+			}
+
+			if tt.wantRedirect {
+				if got, want := response.Header().Get("Location"), quizPath(session, ""); got != want {
+					t.Errorf("Location = %q, want %q", got, want)
+				}
+			}
+
+			if tt.wantResponse != nil {
+				assertBody(t, "POST answer", response.Body.String(), tt.wantResponse(session), nil)
+			}
+
+			// GET twice: a refresh after the redirect must not resubmit or skip a question.
+			for i := 0; i < 2; i++ {
+				var absent []string
+				if tt.wantPageAbsent != nil {
+					absent = tt.wantPageAbsent(session)
+				}
+				body := getPage(handler, quizPath(session, "")).Body.String()
+				assertBody(t, "GET quiz", body, tt.wantPage(session), absent)
+			}
+
+			spec, _ := session.Quiz.Snapshot()
+			if spec.SubmissionId != tt.wantSubmissions {
+				t.Errorf("SubmissionId = %d, want %d", spec.SubmissionId, tt.wantSubmissions)
+			}
+		})
+	}
+}
+
+func Test_QuizHandlerRestart(t *testing.T) {
+	questions := []quiz.Question{{
+		Prompt:        "Pick a color",
+		CorrectAnswer: "red",
+		Options:       []string{"red", "blue"},
+	}}
+
+	tests := []struct {
+		name           string
+		token          func(session *Session) string
+		wantStatus     int
+		wantRedirect   bool
+		wantPage       func(session *Session) []string
+		wantPageAbsent []string
+	}{
+		{
+			name:         "valid token resets the quiz",
+			token:        func(session *Session) string { return session.CSRFToken },
+			wantStatus:   http.StatusSeeOther,
+			wantRedirect: true,
+			wantPage: func(session *Session) []string {
+				return []string{"Pick a color", `action="` + quizPath(session, "/answers") + `"`}
+			},
+			wantPageAbsent: []string{"Phase:", "Restart quiz"},
+		},
+		{
+			name:       "invalid token keeps the finished quiz",
+			token:      func(*Session) string { return "invalid" },
+			wantStatus: http.StatusForbidden,
+			wantPage: func(*Session) []string {
+				return []string{"Quiz complete", "Restart quiz"}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler, session := newSessionTestHandler(t, questions)
+			postAnswer(handler, session, "red", session.CSRFToken)
+
+			if body := getPage(handler, quizPath(session, "")).Body.String(); !strings.Contains(body, "Restart quiz") {
+				t.Fatalf("completion page should offer a restart button:\n%s", body)
+			}
+
+			response := postForm(handler, quizPath(session, "/restart"), url.Values{
+				"csrf_token": {tt.token(session)},
+			})
+			if response.Code != tt.wantStatus {
+				t.Fatalf("POST restart status = %d, want %d", response.Code, tt.wantStatus)
+			}
+
+			if tt.wantRedirect {
+				if got, want := response.Header().Get("Location"), quizPath(session, ""); got != want {
+					t.Errorf("Location = %q, want %q", got, want)
+				}
+			}
+
+			body := getPage(handler, quizPath(session, "")).Body.String()
+			assertBody(t, "GET quiz", body, tt.wantPage(session), tt.wantPageAbsent)
+		})
+	}
+}
+
+func Test_QuizHandlerRejectsCSRFTokenFromAnotherSession(t *testing.T) {
+	questions := []quiz.Question{
+		{Prompt: "Pick a color", CorrectAnswer: "red", Options: []string{"red", "blue"}},
+		{Prompt: "Pick an animal", Options: []string{"cat", "dog"}},
+	}
+
+	tests := []struct {
+		name       string
+		path       string // suffix of the victim's quiz URL
+		form       func(token string) url.Values
+		useVictim  bool // use the victim's own token instead of the attacker's
+		wantStatus int
+		wantPrompt string // victim's prompt afterwards
+	}{
+		{
+			name:       "answer with another session's token",
+			path:       "/answers",
+			form:       func(token string) url.Values { return url.Values{"answer": {"red"}, "csrf_token": {token}} },
+			wantStatus: http.StatusForbidden,
+			wantPrompt: "Pick a color",
+		},
+		{
+			name:       "restart with another session's token",
+			path:       "/restart",
+			form:       func(token string) url.Values { return url.Values{"csrf_token": {token}} },
+			wantStatus: http.StatusForbidden,
+			wantPrompt: "Pick an animal",
+		},
+		{
+			name:       "answer with its own token",
+			path:       "/answers",
+			form:       func(token string) url.Values { return url.Values{"answer": {"red"}, "csrf_token": {token}} },
+			useVictim:  true,
+			wantStatus: http.StatusSeeOther,
+			wantPrompt: "Pick an animal",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &QuizStore{}
+			victim, err := store.NewSession(questions)
+			if err != nil {
+				t.Fatalf("NewSession() for victim error = %v", err)
+			}
+
+			attacker, err := store.NewSession(questions)
+			if err != nil {
+				t.Fatalf("NewSession() for attacker error = %v", err)
+			}
+
+			handler := NewSessionQuizHandler(store)
+
+			// The restart case needs progress to lose, so answer once first.
+			if tt.path == "/restart" {
+				postAnswer(handler, victim, "red", victim.CSRFToken)
+			}
+
+			token := attacker.CSRFToken
+			if tt.useVictim {
+				token = victim.CSRFToken
+			}
+
+			response := postForm(handler, quizPath(victim, tt.path), tt.form(token))
+
+			if response.Code != tt.wantStatus {
+				t.Errorf("POST %s status = %d, want %d", tt.path, response.Code, tt.wantStatus)
+			}
+
+			if body := getPage(handler, quizPath(victim, "")).Body.String(); !strings.Contains(body, tt.wantPrompt) {
+				t.Errorf("victim quiz page does not contain %q after POST %s", tt.wantPrompt, tt.path)
+			}
+		})
+	}
+}
+
+func Test_QuizHandlerRejectsUnknownSession(t *testing.T) {
+	handler := NewSessionQuizHandler(&QuizStore{})
+	response := getPage(handler, "/quizzes/unknown")
+
+	if response.Code != http.StatusNotFound {
+		t.Errorf("GET unknown quiz status = %d, want %d", response.Code, http.StatusNotFound)
+	}
+}
+
+func newSessionTestHandler(t *testing.T, questions []quiz.Question) (http.Handler, *Session) {
+	t.Helper()
+
+	store := &QuizStore{}
+	session, err := store.NewSession(questions)
+	if err != nil {
+		t.Fatalf("NewSession() error = %v", err)
+	}
+
+	return NewSessionQuizHandler(store), session
+}
+
+func quizPath(session *Session, suffix string) string {
+	return "/quizzes/" + session.ID + suffix
+}
+
+func postAnswer(handler http.Handler, session *Session, answer, csrfToken string) *httptest.ResponseRecorder {
+	return postForm(handler, quizPath(session, "/answers"), url.Values{
 		"answer":     {answer},
-		"csrf_token": {testCSRFToken},
+		"csrf_token": {csrfToken},
 	})
 }
 
@@ -89,182 +402,29 @@ func postForm(handler http.Handler, target string, values url.Values) *httptest.
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
+
 	return response
 }
 
-func getPage(handler http.Handler) *httptest.ResponseRecorder {
+func getPage(handler http.Handler, target string) *httptest.ResponseRecorder {
 	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, target, nil))
+
 	return response
 }
 
-func Test_QuizHandlerRedirectsAndAdvancesAfterAnswer(t *testing.T) {
-	quiz := Quiz{
-		Spec: QuizSpec{
-			Questions: []Question{
-				{Prompt: "Pick a color", CorrectAnswer: "red", Options: []string{"red", "blue"}},
-				{Prompt: "Pick an animal", Options: []string{"cat", "dog"}},
-			},
-		},
-	}
-	handler := NewQuizHandler(&quiz, testCSRFToken)
+func assertBody(t *testing.T, label, body string, want, absent []string) {
+	t.Helper()
 
-	response := postAnswer(handler, "RED")
-	if response.Code != http.StatusSeeOther {
-		t.Fatalf("POST / status = %d, want %d", response.Code, http.StatusSeeOther)
-	}
-	if got := response.Header().Get("Location"); got != "/" {
-		t.Errorf("Location = %q, want /", got)
-	}
-
-	// Refreshing (repeating the GET) must not advance the quiz again.
-	for i := 0; i < 2; i++ {
-		body := getPage(handler).Body.String()
-		for _, want := range []string{"Pick an animal", "Phase: Correct", "well done"} {
-			if !strings.Contains(body, want) {
-				t.Errorf("GET / body does not contain %q:\n%s", want, body)
-			}
+	for _, w := range want {
+		if !strings.Contains(body, w) {
+			t.Errorf("%s body does not contain %q:\n%s", label, w, body)
 		}
 	}
-}
 
-func Test_QuizHandlerShowsCompletionAfterLastAnswer(t *testing.T) {
-	quiz := Quiz{
-		Spec: QuizSpec{
-			Questions: []Question{{Prompt: "Pick a color", CorrectAnswer: "red", Options: []string{"red", "blue"}}},
-		},
-	}
-	handler := NewQuizHandler(&quiz, testCSRFToken)
-
-	if response := postAnswer(handler, "blue"); response.Code != http.StatusSeeOther {
-		t.Fatalf("POST / status = %d, want %d", response.Code, http.StatusSeeOther)
-	}
-
-	body := getPage(handler).Body.String()
-	for _, want := range []string{"Quiz complete", "Phase: Incorrect", "Best luck on next", "Phase: Done"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("GET / body does not contain %q:\n%s", want, body)
+	for _, a := range absent {
+		if strings.Contains(body, a) {
+			t.Errorf("%s body should not contain %q:\n%s", label, a, body)
 		}
-	}
-	if strings.Contains(body, `<form method="POST" action="/">`) {
-		t.Errorf("completed quiz page should not show the answer form (restart form is fine):\n%s", body)
-	}
-
-	// Posting after completion is ignored.
-	if response := postAnswer(handler, "red"); response.Code != http.StatusSeeOther {
-		t.Errorf("POST / after completion status = %d, want %d", response.Code, http.StatusSeeOther)
-	}
-	if !strings.Contains(getPage(handler).Body.String(), "Phase: Incorrect") {
-		t.Errorf("answer after completion should not change the result")
-	}
-}
-
-func Test_QuizHandlerRestartResetsQuiz(t *testing.T) {
-	quiz := Quiz{
-		Spec: QuizSpec{
-			Questions: []Question{{Prompt: "Pick a color", CorrectAnswer: "red", Options: []string{"red", "blue"}}},
-		},
-	}
-	handler := NewQuizHandler(&quiz, testCSRFToken)
-	postAnswer(handler, "red")
-
-	if body := getPage(handler).Body.String(); !strings.Contains(body, "Restart quiz") {
-		t.Errorf("completion page should offer a restart button:\n%s", body)
-	}
-
-	response := postForm(handler, "/restart", url.Values{"csrf_token": {testCSRFToken}})
-	if response.Code != http.StatusSeeOther {
-		t.Fatalf("POST /restart status = %d, want %d", response.Code, http.StatusSeeOther)
-	}
-
-	body := getPage(handler).Body.String()
-	if !strings.Contains(body, "Pick a color") || !strings.Contains(body, `<form method="POST" action="/">`) {
-		t.Errorf("restart should show the first question again:\n%s", body)
-	}
-	if strings.Contains(body, "Phase:") || strings.Contains(body, "Restart quiz") {
-		t.Errorf("restart should clear previous feedback:\n%s", body)
-	}
-}
-
-func Test_QuizHandlerInstancesShareQuizState(t *testing.T) {
-	quiz := Quiz{
-		Spec: QuizSpec{
-			Questions: []Question{
-				{Prompt: "Pick a color", CorrectAnswer: "red", Options: []string{"red", "blue"}},
-				{Prompt: "Pick an animal", Options: []string{"cat", "dog"}},
-			},
-		},
-	}
-	firstHandler := NewQuizHandler(&quiz, testCSRFToken)
-	secondHandler := NewQuizHandler(&quiz, testCSRFToken)
-
-	if response := postAnswer(firstHandler, "red"); response.Code != http.StatusSeeOther {
-		t.Fatalf("POST / status = %d, want %d", response.Code, http.StatusSeeOther)
-	}
-
-	body := getPage(secondHandler).Body.String()
-	if !strings.Contains(body, "Pick an animal") {
-		t.Errorf("second handler did not observe the shared quiz state:\n%s", body)
-	}
-	if quiz.Spec.SubmissionId != 1 {
-		t.Errorf("SubmissionId = %d, want 1", quiz.Spec.SubmissionId)
-	}
-}
-
-func Test_QuizHandlerRejectsAnswerOutsideOptions(t *testing.T) {
-	quiz := Quiz{
-		Spec: QuizSpec{
-			Questions: []Question{
-				{Prompt: "Pick a color", CorrectAnswer: "red", Options: []string{"red", "blue"}},
-				{Prompt: "Pick an animal", Options: []string{"cat", "dog"}},
-			},
-		},
-	}
-	handler := NewQuizHandler(&quiz, testCSRFToken)
-
-	if response := postAnswer(handler, "green"); response.Code != http.StatusBadRequest {
-		t.Fatalf("POST / with an unavailable answer status = %d, want %d", response.Code, http.StatusBadRequest)
-	}
-	response := postAnswer(handler, "green")
-	for _, want := range []string{"Pick a color", "<li>red</li>", "Please choose one of the listed options.", `name="answer"`} {
-		if !strings.Contains(response.Body.String(), want) {
-			t.Errorf("invalid answer page does not contain %q:\n%s", want, response.Body.String())
-		}
-	}
-	if got := response.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
-		t.Errorf("Content-Type = %q, want text/html; charset=utf-8", got)
-	}
-	if !strings.Contains(getPage(handler).Body.String(), "Pick a color") {
-		t.Error("invalid answer should not advance the quiz")
-	}
-	if quiz.Spec.SubmissionId != 0 || quiz.Spec.UserAnswer != "" {
-		t.Errorf("invalid answer changed quiz state: SubmissionId=%d UserAnswer=%q", quiz.Spec.SubmissionId, quiz.Spec.UserAnswer)
-	}
-}
-
-func Test_QuizHandlerRequiresCSRFTokenForStateChanges(t *testing.T) {
-	quiz := Quiz{
-		Spec: QuizSpec{
-			Questions: []Question{
-				{Prompt: "Pick a color", CorrectAnswer: "red", Options: []string{"red", "blue"}},
-				{Prompt: "Pick an animal", Options: []string{"cat", "dog"}},
-			},
-		},
-	}
-	handler := NewQuizHandler(&quiz, testCSRFToken)
-
-	if response := postForm(handler, "/", url.Values{"answer": {"red"}}); response.Code != http.StatusForbidden {
-		t.Fatalf("POST / without CSRF token status = %d, want %d", response.Code, http.StatusForbidden)
-	}
-	if !strings.Contains(getPage(handler).Body.String(), "Pick a color") {
-		t.Fatal("POST / without CSRF token should not advance the quiz")
-	}
-
-	postAnswer(handler, "red")
-	if response := postForm(handler, "/restart", url.Values{"csrf_token": {"invalid"}}); response.Code != http.StatusForbidden {
-		t.Fatalf("POST /restart with invalid CSRF token status = %d, want %d", response.Code, http.StatusForbidden)
-	}
-	if !strings.Contains(getPage(handler).Body.String(), "Pick an animal") {
-		t.Error("POST /restart with invalid CSRF token should not reset the quiz")
 	}
 }

@@ -12,7 +12,7 @@
 		{{end}}
 	</ul>
 	{{if .ShowForm}}
-		<form method="POST" action="/">
+		<form method="POST" action="{{.AnswerURL}}">
 			<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 			<input name="answer" required>
 			<button type="submit">Submit</button>
@@ -20,7 +20,7 @@
 	{{end}}
 
 	{{if .ShowRestart}}
-		<form method="POST" action="/restart">
+		<form method="POST" action="{{.RestartURL}}">
 			<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 			<button type="submit">Restart quiz</button>
 		</form>
