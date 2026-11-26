@@ -65,10 +65,12 @@ func ShowStatus(status QuizStatus) string {
 	return "Phase: " + status.Phase + "\tMessage: " + status.Feedback
 }
 
+// New returns a quiz that owns a deep copy of questions, so later changes to
+// the caller's slices do not affect it or any other quiz built from them.
 func New(questions []Question) *Quiz {
 	return &Quiz{
 		Spec: QuizSpec{
-			Questions:    questions,
+			Questions:    cloneQuestions(questions),
 			UserAnswer:   "",
 			SubmissionId: 0,
 		},
@@ -147,4 +149,18 @@ func (q *Quiz) Restart() {
 	q.Spec.UserAnswer = ""
 	q.Spec.SubmissionId = 0
 	q.Status = QuizStatus{Phase: QuizPhasePending}
+}
+
+func cloneQuestions(questions []Question) []Question {
+	if questions == nil {
+		return nil
+	}
+
+	cloned := make([]Question, len(questions))
+	for i, question := range questions {
+		cloned[i] = question
+		cloned[i].Options = append([]string(nil), question.Options...)
+	}
+
+	return cloned
 }
