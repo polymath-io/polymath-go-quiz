@@ -74,26 +74,24 @@ func renderQuizPageWithStatus(w http.ResponseWriter, status int, data PageData) 
 func NewSessionQuizHandler(store *QuizStore, questions []quiz.Question) http.Handler {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if _, err := w.Write(startHTML); err != nil {
-			log.Printf("Could not write start page: %v", err)
-		}
-	})
+	mux.HandleFunc("GET /{$}", serveStartPage)
+	mux.HandleFunc("POST /quizzes", createSession(store, questions))
 
-	// Create a new session and send the visitor to it.
-	mux.HandleFunc("POST /quizzes", func(w http.ResponseWriter, r *http.Request) {
-		session, err := store.NewSession(questions)
-		if err != nil {
-			http.Error(w, "Could not create quiz", http.StatusInternalServerError)
+	mux.HandleFunc("GET /quizzes/{id}", withSession(store, showQuiz))
+	mux.HandleFunc("POST /quizzes/{id}/answers", withSession(store, submitAnswer))
+	mux.HandleFunc("POST /quizzes/{id}/restart", withSession(store, restartQuiz))
 
-			return
-		}
+	return mux
+}
 
-		http.Redirect(w, r, "/quizzes/"+session.ID, http.StatusSeeOther)
-	})
+func quizURL(session *Session) string {
+	return "/quizzes/" + session.ID
+}
 
-	dispatch := func(w http.ResponseWriter, r *http.Request) {
+// withSession looks up the session named by the {id} path value once and passes
+// it to h, or responds with 404 if there is no such (unexpired) session.
+func withSession(store *QuizStore, h func(http.ResponseWriter, *http.Request, *Session)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		session, ok := store.Get(r.PathValue("id"))
 		if !ok {
 			http.NotFound(w, r)
@@ -101,82 +99,89 @@ func NewSessionQuizHandler(store *QuizStore, questions []quiz.Question) http.Han
 			return
 		}
 
-		newQuizHandler(session.Quiz, session.CSRFToken, session.ID).ServeHTTP(w, r)
+		h(w, r, session)
 	}
-
-	mux.HandleFunc("GET /quizzes/{id}", dispatch)
-	mux.HandleFunc("POST /quizzes/{id}/answers", dispatch)
-	mux.HandleFunc("POST /quizzes/{id}/restart", dispatch)
-
-	return mux
 }
 
-func newQuizHandler(q *quiz.Quiz, csrfToken, sessionID string) http.Handler {
-	mux := http.NewServeMux()
-	quizURL := "/quizzes/" + sessionID
-	answerURL := quizURL + "/answers"
-	restartURL := quizURL + "/restart"
+func serveStartPage(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if _, err := w.Write(startHTML); err != nil {
+		log.Printf("Could not write start page: %v", err)
+	}
+}
 
-	mux.HandleFunc("GET /quizzes/{id}", func(w http.ResponseWriter, r *http.Request) {
-		spec, status := q.Snapshot()
+// createSession starts a new quiz session and sends the visitor to it.
+func createSession(store *QuizStore, questions []quiz.Question) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		session, err := store.NewSession(questions)
+		if err != nil {
+			http.Error(w, "Could not create quiz", http.StatusInternalServerError)
 
-		if status.Phase == quiz.QuizPhaseDone {
-			renderQuizPage(w, PageData{
-				Prompt:      "Quiz complete",
-				Messages:    []string{status.LastResult, quiz.ShowStatus(status)},
-				ShowRestart: true,
-				CSRFToken:   csrfToken,
-				RestartURL:  restartURL,
-			})
 			return
 		}
 
-		if status.CurrentQuestion < 0 || status.CurrentQuestion >= len(spec.Questions) {
-			http.Error(w, "No current quiz question", http.StatusInternalServerError)
-			return
-		}
+		http.Redirect(w, r, quizURL(session), http.StatusSeeOther)
+	}
+}
 
-		question := spec.Questions[status.CurrentQuestion]
+func showQuiz(w http.ResponseWriter, r *http.Request, session *Session) {
+	spec, status := session.Quiz.Snapshot()
+
+	if status.Phase == quiz.QuizPhaseDone {
 		renderQuizPage(w, PageData{
-			Prompt:    question.Prompt,
-			Options:   question.Options,
-			Messages:  []string{status.LastResult},
-			ShowForm:  true,
-			CSRFToken: csrfToken,
-			AnswerURL: answerURL,
+			Prompt:      "Quiz complete",
+			Messages:    []string{status.LastResult, quiz.ShowStatus(status)},
+			ShowRestart: true,
+			CSRFToken:   session.CSRFToken,
+			RestartURL:  quizURL(session) + "/restart",
 		})
+		return
+	}
+
+	if status.CurrentQuestion < 0 || status.CurrentQuestion >= len(spec.Questions) {
+		http.Error(w, "No current quiz question", http.StatusInternalServerError)
+		return
+	}
+
+	question := spec.Questions[status.CurrentQuestion]
+	renderQuizPage(w, PageData{
+		Prompt:    question.Prompt,
+		Options:   question.Options,
+		Messages:  []string{status.LastResult},
+		ShowForm:  true,
+		CSRFToken: session.CSRFToken,
+		AnswerURL: quizURL(session) + "/answers",
 	})
+}
 
-	mux.HandleFunc("POST /quizzes/{id}/answers", func(w http.ResponseWriter, r *http.Request) {
-		if !requireValidCSRFToken(w, r, csrfToken) {
-			return
-		}
+func submitAnswer(w http.ResponseWriter, r *http.Request, session *Session) {
+	if !requireValidCSRFToken(w, r, session.CSRFToken) {
+		return
+	}
 
-		outcome := q.SubmitAnswer(r.Form.Get("answer"))
-		switch outcome.Result {
-		case quiz.SubmitNoQuestion:
-			http.Error(w, "No current quiz question", http.StatusInternalServerError)
-		case quiz.SubmitInvalidOption:
-			renderQuizPageWithStatus(w, http.StatusBadRequest, PageData{
-				Prompt:    outcome.Question.Prompt,
-				Options:   outcome.Question.Options,
-				Messages:  []string{"Please choose one of the listed options.", outcome.LastResult},
-				ShowForm:  true,
-				CSRFToken: csrfToken,
-				AnswerURL: answerURL,
-			})
-		default:
-			http.Redirect(w, r, quizURL, http.StatusSeeOther)
-		}
-	})
+	outcome := session.Quiz.SubmitAnswer(r.Form.Get("answer"))
+	switch outcome.Result {
+	case quiz.SubmitNoQuestion:
+		http.Error(w, "No current quiz question", http.StatusInternalServerError)
+	case quiz.SubmitInvalidOption:
+		renderQuizPageWithStatus(w, http.StatusBadRequest, PageData{
+			Prompt:    outcome.Question.Prompt,
+			Options:   outcome.Question.Options,
+			Messages:  []string{"Please choose one of the listed options.", outcome.LastResult},
+			ShowForm:  true,
+			CSRFToken: session.CSRFToken,
+			AnswerURL: quizURL(session) + "/answers",
+		})
+	default:
+		http.Redirect(w, r, quizURL(session), http.StatusSeeOther)
+	}
+}
 
-	mux.HandleFunc("POST /quizzes/{id}/restart", func(w http.ResponseWriter, r *http.Request) {
-		if !requireValidCSRFToken(w, r, csrfToken) {
-			return
-		}
-		q.Restart()
-		http.Redirect(w, r, quizURL, http.StatusSeeOther)
-	})
+func restartQuiz(w http.ResponseWriter, r *http.Request, session *Session) {
+	if !requireValidCSRFToken(w, r, session.CSRFToken) {
+		return
+	}
 
-	return mux
+	session.Quiz.Restart()
+	http.Redirect(w, r, quizURL(session), http.StatusSeeOther)
 }
