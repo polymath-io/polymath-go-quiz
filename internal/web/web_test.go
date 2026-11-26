@@ -32,6 +32,42 @@ func Test_IsAnswerCorrect(t *testing.T) {
 	}
 }
 
+func Test_QuizHandlerCreatesSession(t *testing.T) {
+	store := &QuizStore{}
+	handler := NewSessionQuizHandler(store, []quiz.Question{
+		{Prompt: "Pick a color", CorrectAnswer: "red", Options: []string{"red", "blue"}},
+	})
+
+	tests := []struct {
+		name       string
+		method     string
+		target     string
+		wantStatus int
+	}{
+		{name: "POST creates a session", method: http.MethodPost, target: "/quizzes", wantStatus: http.StatusSeeOther},
+		{name: "GET root shows the start page", method: http.MethodGet, target: "/", wantStatus: http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, httptest.NewRequest(tt.method, tt.target, nil))
+			if response.Code != tt.wantStatus {
+				t.Fatalf("%s %s status = %d, want %d", tt.method, tt.target, response.Code, tt.wantStatus)
+			}
+			if tt.wantStatus != http.StatusSeeOther {
+				return
+			}
+
+			location := response.Header().Get("Location")
+			id := strings.TrimPrefix(location, "/quizzes/")
+			if _, ok := store.Get(id); !ok {
+				t.Errorf("Location %q does not point at a stored session", location)
+			}
+		})
+	}
+}
+
 func Test_QuizHandlerGetQuiz(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -340,7 +376,7 @@ func Test_QuizHandlerRejectsCSRFTokenFromAnotherSession(t *testing.T) {
 				t.Fatalf("NewSession() for attacker error = %v", err)
 			}
 
-			handler := NewSessionQuizHandler(store)
+			handler := NewSessionQuizHandler(store, questions)
 
 			// The restart case needs progress to lose, so answer once first.
 			if tt.path == "/restart" {
@@ -366,7 +402,7 @@ func Test_QuizHandlerRejectsCSRFTokenFromAnotherSession(t *testing.T) {
 }
 
 func Test_QuizHandlerRejectsUnknownSession(t *testing.T) {
-	handler := NewSessionQuizHandler(&QuizStore{})
+	handler := NewSessionQuizHandler(&QuizStore{}, []quiz.Question{})
 	response := getPage(handler, "/quizzes/unknown")
 
 	if response.Code != http.StatusNotFound {
@@ -383,7 +419,7 @@ func newSessionTestHandler(t *testing.T, questions []quiz.Question) (http.Handle
 		t.Fatalf("NewSession() error = %v", err)
 	}
 
-	return NewSessionQuizHandler(store), session
+	return NewSessionQuizHandler(store, questions), session
 }
 
 func quizPath(session *Session, suffix string) string {

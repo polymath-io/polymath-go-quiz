@@ -14,18 +14,8 @@ func main() {
 
 	var store web.QuizStore
 
-	session, err := store.NewSession([]quiz.Question{q1, q2})
-	if err != nil {
-		log.Fatal(err)
-	}
+	handler := web.NewSessionQuizHandler(&store, []quiz.Question{q1, q2})
 
-	quizURL := "/quizzes/" + session.ID
-
-	mux := http.NewServeMux()
-	mux.Handle("GET /{$}", http.RedirectHandler(quizURL, http.StatusSeeOther))
-	mux.Handle("/", web.NewSessionQuizHandler(&store))
-
-	log.Printf("Quiz session: http://localhost:8083%s", quizURL)
 	log.Println("Server listening on http://localhost:8083")
-	log.Fatal(http.ListenAndServe(":8083", mux))
+	log.Fatal(http.ListenAndServe(":8083", handler))
 }

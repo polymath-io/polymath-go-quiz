@@ -19,6 +19,9 @@ var pageHTML string
 
 var pageTemplate = template.Must(template.New("page").Parse(pageHTML))
 
+//go:embed start.html
+var startHTML []byte
+
 type PageData struct {
 	Prompt      string
 	Options     []string
@@ -68,20 +71,43 @@ func renderQuizPageWithStatus(w http.ResponseWriter, status int, data PageData) 
 	}
 }
 
-func NewSessionQuizHandler(store *QuizStore) http.Handler {
+func NewSessionQuizHandler(store *QuizStore, questions []quiz.Question) http.Handler {
 	mux := http.NewServeMux()
+
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if _, err := w.Write(startHTML); err != nil {
+			log.Printf("Could not write start page: %v", err)
+		}
+	})
+
+	// Create a new session and send the visitor to it.
+	mux.HandleFunc("POST /quizzes", func(w http.ResponseWriter, r *http.Request) {
+		session, err := store.NewSession(questions)
+		if err != nil {
+			http.Error(w, "Could not create quiz", http.StatusInternalServerError)
+
+			return
+		}
+
+		http.Redirect(w, r, "/quizzes/"+session.ID, http.StatusSeeOther)
+	})
+
 	dispatch := func(w http.ResponseWriter, r *http.Request) {
 		session, ok := store.Get(r.PathValue("id"))
 		if !ok {
 			http.NotFound(w, r)
+
 			return
 		}
+
 		newQuizHandler(session.Quiz, session.CSRFToken, session.ID).ServeHTTP(w, r)
 	}
 
 	mux.HandleFunc("GET /quizzes/{id}", dispatch)
 	mux.HandleFunc("POST /quizzes/{id}/answers", dispatch)
 	mux.HandleFunc("POST /quizzes/{id}/restart", dispatch)
+
 	return mux
 }
 
