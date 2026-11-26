@@ -4,15 +4,19 @@ import (
 	"crypto/rand"
 	"fmt"
 	"sync"
+	"time"
 
 	"quiz.com/internal/quiz"
 )
+
+const sessionTTL = time.Hour
 
 // Session associates a quiz and its CSRF token with a unique session ID.
 type Session struct {
 	ID        string
 	Quiz      *quiz.Quiz
 	CSRFToken string
+	ExpiresAt time.Time
 }
 
 // QuizStore manages sessions by ID and protects the registry with a mutex.
@@ -36,6 +40,7 @@ func (s *QuizStore) NewSession(questions []quiz.Question) (*Session, error) {
 		ID:        sessionID,
 		Quiz:      quiz.New(questions),
 		CSRFToken: csrfToken,
+		ExpiresAt: time.Now().Add(sessionTTL),
 	}
 
 	s.mu.Lock()
@@ -49,11 +54,34 @@ func (s *QuizStore) NewSession(questions []quiz.Question) (*Session, error) {
 }
 
 func (s *QuizStore) Get(id string) (*Session, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	session, ok := s.sessions[id]
+	if ok && !time.Now().Before(session.ExpiresAt) {
+		delete(s.sessions, id)
+
+		return nil, false
+	}
+
 	return session, ok
+}
+
+// CleanupExpired removes sessions whose expiry time has passed and returns the
+// number of sessions removed.
+func (s *QuizStore) CleanupExpired(now time.Time) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	removed := 0
+	for id, session := range s.sessions {
+		if !now.Before(session.ExpiresAt) {
+			delete(s.sessions, id)
+			removed++
+		}
+	}
+
+	return removed
 }
 
 func newSessionID() (string, error) {

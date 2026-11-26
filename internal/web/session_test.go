@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"strings"
 	"testing"
+	"time"
 
 	"quiz.com/internal/quiz"
 )
@@ -23,6 +24,9 @@ func Test_QuizStoreCreateAndGet(t *testing.T) {
 	assertUUIDv4(t, session.ID)
 	if session.CSRFToken == "" {
 		t.Fatal("NewSession() returned an empty CSRF token")
+	}
+	if remaining := time.Until(session.ExpiresAt); remaining <= 0 || remaining > sessionTTL {
+		t.Errorf("session expiry is in %v, want a future time no more than %v away", remaining, sessionTTL)
 	}
 
 	tests := []struct {
@@ -52,6 +56,110 @@ func Test_QuizStoreCreateAndGet(t *testing.T) {
 			}
 			if got != tt.wantSession {
 				t.Errorf("Get(%q) = %p, want %p", tt.id, got, tt.wantSession)
+			}
+		})
+	}
+}
+
+func Test_QuizStoreGetExpiresSessions(t *testing.T) {
+	now := time.Now()
+	tests := []struct {
+		name      string
+		expiresAt time.Time
+		wantFound bool
+	}{
+		{
+			name:      "active session",
+			expiresAt: now.Add(time.Minute),
+			wantFound: true,
+		},
+		{
+			name:      "expired session",
+			expiresAt: now.Add(-time.Second),
+			wantFound: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			session := &Session{ID: "test-session", ExpiresAt: tt.expiresAt}
+			store := QuizStore{sessions: map[string]*Session{session.ID: session}}
+
+			got, ok := store.Get(session.ID)
+			if ok != tt.wantFound {
+				t.Fatalf("Get() found = %t, want %t", ok, tt.wantFound)
+			}
+
+			if tt.wantFound && got != session {
+				t.Errorf("Get() = %p, want %p", got, session)
+			}
+
+			if !tt.wantFound {
+				if _, exists := store.sessions[session.ID]; exists {
+					t.Error("Get() left the expired session in the store")
+				}
+			}
+		})
+	}
+}
+
+func Test_QuizStoreCleanupExpired(t *testing.T) {
+	now := time.Now()
+	type sessionCase struct {
+		id          string
+		expiresAt   time.Time
+		wantPresent bool
+	}
+
+	tests := []struct {
+		name        string
+		sessions    []sessionCase
+		wantRemoved int
+	}{
+		{
+			name:        "removes expired session",
+			sessions:    []sessionCase{{id: "expired", expiresAt: now.Add(-time.Second)}},
+			wantRemoved: 1,
+		},
+		{
+			name: "keeps active session",
+			sessions: []sessionCase{{
+				id: "active", expiresAt: now.Add(time.Minute), wantPresent: true,
+			}},
+		},
+		{
+			name: "removes expired and keeps active sessions",
+			sessions: []sessionCase{
+				{id: "expired", expiresAt: now.Add(-time.Second)},
+				{id: "active", expiresAt: now.Add(time.Minute), wantPresent: true},
+			},
+			wantRemoved: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := QuizStore{sessions: make(map[string]*Session, len(tt.sessions))}
+			sessions := make(map[string]*Session, len(tt.sessions))
+			for _, tc := range tt.sessions {
+				session := &Session{ID: tc.id, ExpiresAt: tc.expiresAt}
+				store.sessions[session.ID] = session
+				sessions[session.ID] = session
+			}
+
+			if got := store.CleanupExpired(now); got != tt.wantRemoved {
+				t.Fatalf("CleanupExpired() removed %d sessions, want %d", got, tt.wantRemoved)
+			}
+
+			for _, tc := range tt.sessions {
+				got, ok := store.Get(tc.id)
+				if ok != tc.wantPresent {
+					t.Errorf("Get(%q) found = %t, want %t", tc.id, ok, tc.wantPresent)
+				}
+
+				if tc.wantPresent && got != sessions[tc.id] {
+					t.Errorf("Get(%q) = %p, want %p", tc.id, got, sessions[tc.id])
+				}
 			}
 		})
 	}
