@@ -370,6 +370,34 @@ func (response CreateQuiz201JSONResponse) VisitCreateQuizResponse(w http.Respons
 	return err
 }
 
+type CreateQuiz500JSONResponse ErrorBody
+
+func (response CreateQuiz500JSONResponse) VisitCreateQuizResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateQuiz503JSONResponse ErrorBody
+
+func (response CreateQuiz503JSONResponse) VisitCreateQuizResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetQuizRequestObject struct {
 	QuizId QuizPath `json:"quizId"`
 }
@@ -392,6 +420,20 @@ func (response GetQuiz200JSONResponse) VisitGetQuizResponse(w http.ResponseWrite
 	return err
 }
 
+type GetQuiz400JSONResponse ErrorBody
+
+func (response GetQuiz400JSONResponse) VisitGetQuizResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetQuiz404JSONResponse ErrorBody
 
 func (response GetQuiz404JSONResponse) VisitGetQuizResponse(w http.ResponseWriter) error {
@@ -402,6 +444,20 @@ func (response GetQuiz404JSONResponse) VisitGetQuizResponse(w http.ResponseWrite
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetQuiz500JSONResponse ErrorBody
+
+func (response GetQuiz500JSONResponse) VisitGetQuizResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -471,6 +527,48 @@ func (response SubmitAnswer409JSONResponse) VisitSubmitAnswerResponse(w http.Res
 	return err
 }
 
+type SubmitAnswer413JSONResponse ErrorBody
+
+func (response SubmitAnswer413JSONResponse) VisitSubmitAnswerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitAnswer415JSONResponse ErrorBody
+
+func (response SubmitAnswer415JSONResponse) VisitSubmitAnswerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitAnswer500JSONResponse ErrorBody
+
+func (response SubmitAnswer500JSONResponse) VisitSubmitAnswerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type RestartQuizRequestObject struct {
 	QuizId QuizPath `json:"quizId"`
 }
@@ -493,6 +591,20 @@ func (response RestartQuiz200JSONResponse) VisitRestartQuizResponse(w http.Respo
 	return err
 }
 
+type RestartQuiz400JSONResponse ErrorBody
+
+func (response RestartQuiz400JSONResponse) VisitRestartQuizResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type RestartQuiz404JSONResponse ErrorBody
 
 func (response RestartQuiz404JSONResponse) VisitRestartQuizResponse(w http.ResponseWriter) error {
@@ -503,6 +615,20 @@ func (response RestartQuiz404JSONResponse) VisitRestartQuizResponse(w http.Respo
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestartQuiz500JSONResponse ErrorBody
+
+func (response RestartQuiz500JSONResponse) VisitRestartQuizResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
 }

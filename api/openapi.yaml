@@ -28,6 +28,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/QuizState'
+        '500':
+          description: An unexpected server error. The message does not reveal internal details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '503':
+          description: The server cannot start another quiz right now, for example because it holds too many.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
   /quizzes/{quizId}:
     get:
       operationId: getQuiz
@@ -41,8 +53,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/QuizState'
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
         '404':
           description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '500':
+          description: An unexpected server error. The message does not reveal internal details.
           content:
             application/json:
               schema:
@@ -80,6 +104,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorBody'
+        '413':
+          description: The request body is larger than the server accepts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '415':
+          description: The request body is not application/json.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '500':
+          description: An unexpected server error. The message does not reveal internal details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
       requestBody:
         required: true
         content:
@@ -99,8 +141,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/QuizState'
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
         '404':
           description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '500':
+          description: An unexpected server error. The message does not reveal internal details.
           content:
             application/json:
               schema:
