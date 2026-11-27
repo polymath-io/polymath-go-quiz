@@ -16,7 +16,7 @@ using TypeSpec.OpenAPI;
  */
 @service(#{ title: "Quiz API" })
 @info(#{ version: "1.0.0" })
-@server("http://localhost:8083", "Local development server")
+@server("/api", "Relative to the host serving the API")
 namespace QuizApi;
 
 /** Whether the quiz is still asking questions. */
@@ -93,10 +93,34 @@ model ConflictError {
   @body body: ErrorBody;
 }
 
+/** The request body is larger than the server accepts. */
+model PayloadTooLargeError {
+  @statusCode _: 413;
+  @body body: ErrorBody;
+}
+
+/** The request body is not application/json. */
+model UnsupportedMediaTypeError {
+  @statusCode _: 415;
+  @body body: ErrorBody;
+}
+
+/** An unexpected server error. The message does not reveal internal details. */
+model InternalServerError {
+  @statusCode _: 500;
+  @body body: ErrorBody;
+}
+
+/** The server cannot start another quiz right now, for example because it holds too many. */
+model ServiceUnavailableError {
+  @statusCode _: 503;
+  @body body: ErrorBody;
+}
+
 model CreatedQuiz {
   @statusCode _: 201;
 
-  /** Path of the new quiz, /quizzes/{quizId}. */
+  /** Path of the new quiz, /api/quizzes/{quizId}. */
   @header location: string;
 
   @body body: QuizState;
@@ -112,13 +136,13 @@ interface Quizzes {
   /** Start a new quiz with its own state. */
   @post
   @operationId("createQuiz")
-  create(): CreatedQuiz;
+  create(): CreatedQuiz | InternalServerError | ServiceUnavailableError;
 
   /** Get the current state of a quiz. */
   @get
   @route("{quizId}")
   @operationId("getQuiz")
-  get(...QuizPath): QuizState | NotFoundError;
+  get(...QuizPath): QuizState | BadRequestError | NotFoundError | InternalServerError;
 
   /**
    * Submit an answer to the current question. The response is the quiz state
@@ -131,11 +155,18 @@ interface Quizzes {
     | QuizState
     | BadRequestError
     | NotFoundError
-    | ConflictError;
+    | ConflictError
+    | PayloadTooLargeError
+    | UnsupportedMediaTypeError
+    | InternalServerError;
 
   /** Reset the quiz to its first question and clear the previous result. */
   @post
   @route("{quizId}/restart")
   @operationId("restartQuiz")
-  restart(...QuizPath): QuizState | NotFoundError;
+  restart(...QuizPath):
+    | QuizState
+    | BadRequestError
+    | NotFoundError
+    | InternalServerError;
 }

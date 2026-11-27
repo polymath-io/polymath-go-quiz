@@ -25,7 +25,13 @@ type QuizStore struct {
 	sessions map[string]*Session // ID -> session
 }
 
+// NewSession creates a session for a new quiz over questions, which must pass
+// quiz.ValidateQuestions.
 func (s *QuizStore) NewSession(questions []quiz.Question) (*Session, error) {
+	if err := quiz.ValidateQuestions(questions); err != nil {
+		return nil, err
+	}
+
 	sessionID, err := newSessionID()
 	if err != nil {
 		return nil, err

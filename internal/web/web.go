@@ -130,7 +130,7 @@ func showQuiz(w http.ResponseWriter, r *http.Request, session *Session) {
 	if status.Phase == quiz.QuizPhaseDone {
 		renderQuizPage(w, PageData{
 			Prompt:      "Quiz complete",
-			Messages:    []string{status.LastResult, quiz.ShowStatus(status)},
+			Messages:    []string{quiz.FormatLastAnswer(status.LastAnswer), quiz.ShowStatus(status)},
 			ShowRestart: true,
 			CSRFToken:   session.CSRFToken,
 			RestartURL:  quizURL(session) + "/restart",
@@ -147,7 +147,7 @@ func showQuiz(w http.ResponseWriter, r *http.Request, session *Session) {
 	renderQuizPage(w, PageData{
 		Prompt:    question.Prompt,
 		Options:   question.Options,
-		Messages:  []string{status.LastResult},
+		Messages:  []string{quiz.FormatLastAnswer(status.LastAnswer)},
 		ShowForm:  true,
 		CSRFToken: session.CSRFToken,
 		AnswerURL: quizURL(session) + "/answers",
@@ -164,10 +164,11 @@ func submitAnswer(w http.ResponseWriter, r *http.Request, session *Session) {
 	case quiz.SubmitNoQuestion:
 		http.Error(w, "No current quiz question", http.StatusInternalServerError)
 	case quiz.SubmitInvalidOption:
+		question := outcome.Spec.Questions[outcome.Status.CurrentQuestion]
 		renderQuizPageWithStatus(w, http.StatusBadRequest, PageData{
-			Prompt:    outcome.Question.Prompt,
-			Options:   outcome.Question.Options,
-			Messages:  []string{"Please choose one of the listed options.", outcome.LastResult},
+			Prompt:    question.Prompt,
+			Options:   question.Options,
+			Messages:  []string{"Please choose one of the listed options.", quiz.FormatLastAnswer(outcome.Status.LastAnswer)},
 			ShowForm:  true,
 			CSRFToken: session.CSRFToken,
 			AnswerURL: quizURL(session) + "/answers",
