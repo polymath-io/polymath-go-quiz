@@ -49,3 +49,53 @@ func Test_NewWithoutQuestions(t *testing.T) {
 		t.Errorf("New(nil) has %d questions, want 0", len(spec.Questions))
 	}
 }
+
+func colorQuestions() []Question {
+	return []Question{
+		{Prompt: "Pick a color", CorrectAnswer: "red", Options: []string{"red", "blue"}},
+		{Prompt: "Pick an animal", CorrectAnswer: "cat", Options: []string{"cat", "dog"}},
+	}
+}
+
+func Test_StateCopiesLastAnswer(t *testing.T) {
+	q := New(colorQuestions())
+	q.SubmitAnswer("red")
+
+	_, status := q.Snapshot()
+	status.LastAnswer.Message = "changed"
+
+	_, again := q.Snapshot()
+	assertLastAnswer(t, again.LastAnswer, &AnswerResult{Correct: true, Message: "well done"})
+}
+
+func Test_FormatLastAnswer(t *testing.T) {
+	tests := []struct {
+		name string
+		last *AnswerResult
+		want string
+	}{
+		{name: "before the first answer", last: nil, want: ""},
+		{name: "correct", last: &AnswerResult{Correct: true, Message: "well done"}, want: "Phase: Correct\tMessage: well done"},
+		{name: "incorrect", last: &AnswerResult{Message: "Best luck on next"}, want: "Phase: Incorrect\tMessage: Best luck on next"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := FormatLastAnswer(tt.last); got != tt.want {
+				t.Errorf("FormatLastAnswer() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func assertLastAnswer(t *testing.T, got, want *AnswerResult) {
+	t.Helper()
+
+	switch {
+	case got == nil && want == nil:
+	case got == nil || want == nil:
+		t.Errorf("LastAnswer = %+v, want %+v", got, want)
+	case *got != *want:
+		t.Errorf("LastAnswer = %+v, want %+v", *got, *want)
+	}
+}

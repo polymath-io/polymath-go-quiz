@@ -17,11 +17,17 @@ type QuizSpec struct {
 	SubmissionId int
 }
 
+// AnswerResult is the outcome of the most recently submitted answer.
+type AnswerResult struct {
+	Correct bool
+	Message string
+}
+
 type QuizStatus struct {
 	CurrentQuestion int
 	Phase           string
 	Feedback        string
-	LastResult      string
+	LastAnswer      *AnswerResult // nil until the first answer
 }
 
 type Quiz struct {
@@ -65,6 +71,19 @@ func ShowStatus(status QuizStatus) string {
 	return "Phase: " + status.Phase + "\tMessage: " + status.Feedback
 }
 
+// FormatLastAnswer renders the last answer for the HTML page, such as
+// "Phase: Correct\tMessage: well done". It returns "" before the first answer.
+func FormatLastAnswer(last *AnswerResult) string {
+	if last == nil {
+		return ""
+	}
+	phase := QuizPhaseIncorrect
+	if last.Correct {
+		phase = QuizPhaseCorrect
+	}
+	return ShowStatus(QuizStatus{Phase: phase, Feedback: last.Message})
+}
+
 // New returns a quiz that owns a deep copy of questions, so later changes to
 // the caller's slices do not affect it or any other quiz built from them.
 func New(questions []Question) *Quiz {
@@ -85,7 +104,18 @@ func New(questions []Question) *Quiz {
 func (q *Quiz) Snapshot() (QuizSpec, QuizStatus) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	return q.Spec, q.Status
+	return q.Spec, q.statusCopy()
+}
+
+// statusCopy returns q.Status with its own copy of LastAnswer, so callers
+// cannot change the quiz through the pointer. It must be called with q.mu held.
+func (q *Quiz) statusCopy() QuizStatus {
+	status := q.Status
+	if status.LastAnswer != nil {
+		last := *status.LastAnswer
+		status.LastAnswer = &last
+	}
+	return status
 }
 
 type SubmitResult int
@@ -97,12 +127,12 @@ const (
 	SubmitInvalidOption
 )
 
-// SubmitOutcome describes a submission. Question and LastResult are the state
+// SubmitOutcome describes a submission. Question and LastAnswer are the state
 // the answer was checked against, taken under the same lock.
 type SubmitOutcome struct {
 	Result     SubmitResult
 	Question   Question
-	LastResult string
+	LastAnswer *AnswerResult
 }
 
 func (q *Quiz) SubmitAnswer(answer string) SubmitOutcome {
@@ -118,7 +148,7 @@ func (q *Quiz) SubmitAnswer(answer string) SubmitOutcome {
 
 	question := q.Spec.Questions[q.Status.CurrentQuestion]
 	if !IsAnswerOption(question.Options, answer) {
-		return SubmitOutcome{Result: SubmitInvalidOption, Question: question, LastResult: q.Status.LastResult}
+		return SubmitOutcome{Result: SubmitInvalidOption, Question: question, LastAnswer: q.statusCopy().LastAnswer}
 	}
 
 	q.Spec.UserAnswer = answer
@@ -131,7 +161,10 @@ func (q *Quiz) SubmitAnswer(answer string) SubmitOutcome {
 		q.Status.Phase = QuizPhaseIncorrect
 		q.Status.Feedback = "Best luck on next"
 	}
-	q.Status.LastResult = ShowStatus(q.Status)
+	q.Status.LastAnswer = &AnswerResult{
+		Correct: q.Status.Phase == QuizPhaseCorrect,
+		Message: q.Status.Feedback,
+	}
 
 	if q.Status.CurrentQuestion+1 < len(q.Spec.Questions) {
 		q.Status.CurrentQuestion++
