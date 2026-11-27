@@ -1,0 +1,12 @@
+# Options reference: https://typespec.io/docs/emitters/openapi3/reference/
+# To generate openapi.yaml, run from this folder: npm install && npm run build
+emit:
+  - "@typespec/openapi3"
+options:
+  "@typespec/openapi3":
+    emitter-output-dir: "{project-root}"
+    output-file: openapi.yaml
+    file-type: yaml
+    # 3.0 is oapi-codegen's most mature input; its 3.1 support is newer.
+    openapi-versions:
+      - 3.0.0
