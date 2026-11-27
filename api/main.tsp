@@ -16,7 +16,7 @@ using TypeSpec.OpenAPI;
  */
 @service(#{ title: "Quiz API" })
 @info(#{ version: "1.0.0" })
-@server("http://localhost:8083", "Local development server")
+@server("/api", "Relative to the host serving the API")
 namespace QuizApi;
 
 /** Whether the quiz is still asking questions. */
@@ -96,7 +96,7 @@ model ConflictError {
 model CreatedQuiz {
   @statusCode _: 201;
 
-  /** Path of the new quiz, /quizzes/{quizId}. */
+  /** Path of the new quiz, /api/quizzes/{quizId}. */
   @header location: string;
 
   @body body: QuizState;

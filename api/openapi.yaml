@@ -21,7 +21,7 @@ paths:
           headers:
             location:
               required: true
-              description: Path of the new quiz, /quizzes/{quizId}.
+              description: Path of the new quiz, /api/quizzes/{quizId}.
               schema:
                 type: string
           content:
@@ -201,6 +201,6 @@ components:
           type: string
           description: One of the current question's options, compared case-insensitively.
 servers:
-  - url: http://localhost:8083
-    description: Local development server
+  - url: /api
+    description: Relative to the host serving the API
     variables: {}
