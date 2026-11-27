@@ -41,10 +41,14 @@ model LastAnswer {
   message: string;
 }
 
+/** A session ID: a lowercase UUID v4. */
+@pattern("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+scalar QuizId extends string;
+
 /** Everything a client needs to render the quiz. */
 model QuizState {
-  /** Session ID of this quiz (UUID v4). */
-  id: string;
+  /** Session ID of this quiz. */
+  id: QuizId;
 
   phase: QuizPhase;
 
@@ -100,7 +104,7 @@ model CreatedQuiz {
 
 model QuizPath {
   /** Session ID returned when the quiz was created. */
-  @path quizId: string;
+  @path quizId: QuizId;
 }
 
 @route("/quizzes")

@@ -113,7 +113,7 @@ components:
       required: true
       description: Session ID returned when the quiz was created.
       schema:
-        type: string
+        $ref: '#/components/schemas/QuizId'
   schemas:
     ErrorBody:
       type: object
@@ -148,6 +148,10 @@ components:
             type: string
           description: Answers the player may choose from.
       description: A question as shown to the player. The correct answer is never exposed.
+    QuizId:
+      type: string
+      pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+      description: 'A session ID: a lowercase UUID v4.'
     QuizPhase:
       type: string
       enum:
@@ -163,8 +167,9 @@ components:
         - totalQuestions
       properties:
         id:
-          type: string
-          description: Session ID of this quiz (UUID v4).
+          allOf:
+            - $ref: '#/components/schemas/QuizId'
+          description: Session ID of this quiz.
         phase:
           $ref: '#/components/schemas/QuizPhase'
         question:

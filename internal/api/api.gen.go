@@ -52,13 +52,16 @@ type Question struct {
 	Prompt  string   `json:"prompt"`
 }
 
+// QuizId A session ID: a lowercase UUID v4.
+type QuizId = string
+
 // QuizPhase Whether the quiz is still asking questions.
 type QuizPhase string
 
 // QuizState Everything a client needs to render the quiz.
 type QuizState struct {
-	// Id Session ID of this quiz (UUID v4).
-	Id string `json:"id"`
+	// Id Session ID of this quiz.
+	Id QuizId `json:"id"`
 
 	// LastAnswer Absent until the first answer has been submitted.
 	LastAnswer *LastAnswer `json:"lastAnswer,omitempty"`
@@ -81,8 +84,8 @@ type SubmitAnswerRequest struct {
 	Answer string `json:"answer"`
 }
 
-// QuizPath defines model for QuizPath.
-type QuizPath = string
+// QuizPath A session ID: a lowercase UUID v4.
+type QuizPath = QuizId
 
 // SubmitAnswerJSONRequestBody defines body for SubmitAnswer for application/json ContentType.
 type SubmitAnswerJSONRequestBody = SubmitAnswerRequest
