@@ -164,10 +164,11 @@ func submitAnswer(w http.ResponseWriter, r *http.Request, session *Session) {
 	case quiz.SubmitNoQuestion:
 		http.Error(w, "No current quiz question", http.StatusInternalServerError)
 	case quiz.SubmitInvalidOption:
+		question := outcome.Spec.Questions[outcome.Status.CurrentQuestion]
 		renderQuizPageWithStatus(w, http.StatusBadRequest, PageData{
-			Prompt:    outcome.Question.Prompt,
-			Options:   outcome.Question.Options,
-			Messages:  []string{"Please choose one of the listed options.", quiz.FormatLastAnswer(outcome.LastAnswer)},
+			Prompt:    question.Prompt,
+			Options:   question.Options,
+			Messages:  []string{"Please choose one of the listed options.", quiz.FormatLastAnswer(outcome.Status.LastAnswer)},
 			ShowForm:  true,
 			CSRFToken: session.CSRFToken,
 			AnswerURL: quizURL(session) + "/answers",

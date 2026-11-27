@@ -127,12 +127,13 @@ const (
 	SubmitInvalidOption
 )
 
-// SubmitOutcome describes a submission. Question and LastAnswer are the state
-// the answer was checked against, taken under the same lock.
+// SubmitOutcome describes a submission. Spec and Status are the quiz state
+// after the call, taken under the same lock; they are unchanged when the
+// answer was not accepted.
 type SubmitOutcome struct {
-	Result     SubmitResult
-	Question   Question
-	LastAnswer *AnswerResult
+	Result SubmitResult
+	Spec   QuizSpec
+	Status QuizStatus
 }
 
 func (q *Quiz) SubmitAnswer(answer string) SubmitOutcome {
@@ -140,15 +141,15 @@ func (q *Quiz) SubmitAnswer(answer string) SubmitOutcome {
 	defer q.mu.Unlock()
 
 	if q.Status.Phase == QuizPhaseDone {
-		return SubmitOutcome{Result: SubmitDone}
+		return q.outcome(SubmitDone)
 	}
 	if q.Status.CurrentQuestion < 0 || q.Status.CurrentQuestion >= len(q.Spec.Questions) {
-		return SubmitOutcome{Result: SubmitNoQuestion}
+		return q.outcome(SubmitNoQuestion)
 	}
 
 	question := q.Spec.Questions[q.Status.CurrentQuestion]
 	if !IsAnswerOption(question.Options, answer) {
-		return SubmitOutcome{Result: SubmitInvalidOption, Question: question, LastAnswer: q.statusCopy().LastAnswer}
+		return q.outcome(SubmitInvalidOption)
 	}
 
 	q.Spec.UserAnswer = answer
@@ -172,16 +173,24 @@ func (q *Quiz) SubmitAnswer(answer string) SubmitOutcome {
 	} else {
 		q.Status.Phase = QuizPhaseDone
 	}
-	return SubmitOutcome{Result: SubmitAccepted, Question: question}
+	return q.outcome(SubmitAccepted)
 }
 
-func (q *Quiz) Restart() {
+// outcome must be called with q.mu held.
+func (q *Quiz) outcome(result SubmitResult) SubmitOutcome {
+	return SubmitOutcome{Result: result, Spec: q.Spec, Status: q.statusCopy()}
+}
+
+// Restart resets the quiz to its first question and returns the new state.
+func (q *Quiz) Restart() (QuizSpec, QuizStatus) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
 	q.Spec.UserAnswer = ""
 	q.Spec.SubmissionId = 0
 	q.Status = QuizStatus{Phase: QuizPhasePending}
+
+	return q.Spec, q.statusCopy()
 }
 
 func cloneQuestions(questions []Question) []Question {
