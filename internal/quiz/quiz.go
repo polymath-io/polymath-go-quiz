@@ -1,6 +1,8 @@
 package quiz
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 	"sync"
 )
@@ -82,6 +84,33 @@ func FormatLastAnswer(last *AnswerResult) string {
 		phase = QuizPhaseCorrect
 	}
 	return ShowStatus(QuizStatus{Phase: phase, Feedback: last.Message})
+}
+
+var (
+	// ErrNoQuestions is returned by ValidateQuestions for an empty question set.
+	ErrNoQuestions = errors.New("quiz needs at least one question")
+	// ErrInvalidQuestion wraps the reason a single question cannot be played.
+	ErrInvalidQuestion = errors.New("invalid question")
+)
+
+// ValidateQuestions reports why questions cannot be played as a quiz, or nil.
+// Questions are numbered from 1 in the error.
+func ValidateQuestions(questions []Question) error {
+	if len(questions) == 0 {
+		return ErrNoQuestions
+	}
+	for i, question := range questions {
+		switch {
+		case strings.TrimSpace(question.Prompt) == "":
+			return fmt.Errorf("%w: question %d has no prompt", ErrInvalidQuestion, i+1)
+		case len(question.Options) == 0:
+			return fmt.Errorf("%w: question %d has no options", ErrInvalidQuestion, i+1)
+		case !IsAnswerOption(question.Options, question.CorrectAnswer):
+			return fmt.Errorf("%w: question %d's correct answer %q is not one of its options",
+				ErrInvalidQuestion, i+1, question.CorrectAnswer)
+		}
+	}
+	return nil
 }
 
 // New returns a quiz that owns a deep copy of questions, so later changes to

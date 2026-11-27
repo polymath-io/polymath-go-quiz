@@ -13,6 +13,11 @@ func main() {
 	q1 := quiz.NewQuestion("first color?", "red", []string{"blue", "white", "red"})
 	q2 := quiz.NewQuestion("second color?", "blue", []string{"blue", "white", "red"})
 
+	questions := []quiz.Question{q1, q2}
+	if err := quiz.ValidateQuestions(questions); err != nil {
+		log.Fatalf("invalid quiz questions: %v", err)
+	}
+
 	var store web.QuizStore
 
 	// running on background every minute to remove expired sessions
@@ -24,7 +29,7 @@ func main() {
 		}
 	}()
 
-	handler := web.NewSessionQuizHandler(&store, []quiz.Question{q1, q2})
+	handler := web.NewSessionQuizHandler(&store, questions)
 
 	log.Println("Server listening on http://localhost:8083")
 	log.Fatal(http.ListenAndServe(":8083", handler))

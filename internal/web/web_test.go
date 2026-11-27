@@ -78,8 +78,9 @@ func Test_QuizHandlerGetQuiz(t *testing.T) {
 		{
 			name: "displays the first question",
 			questions: []quiz.Question{{
-				Prompt:  "Pick a color",
-				Options: []string{"red", "blue"},
+				Prompt:        "Pick a color",
+				CorrectAnswer: "red",
+				Options:       []string{"red", "blue"},
 			}},
 			wantStatus: http.StatusOK,
 			wantBody: func(session *Session) []string {
@@ -91,11 +92,6 @@ func Test_QuizHandlerGetQuiz(t *testing.T) {
 					`action="` + quizPath(session, "/answers") + `"`,
 				}
 			},
-		},
-		{
-			name:       "rejects a quiz without questions",
-			questions:  nil,
-			wantStatus: http.StatusInternalServerError,
 		},
 	}
 
@@ -124,7 +120,7 @@ func Test_QuizHandlerGetQuiz(t *testing.T) {
 func Test_QuizHandlerAnswers(t *testing.T) {
 	colorThenAnimal := []quiz.Question{
 		{Prompt: "Pick a color", CorrectAnswer: "red", Options: []string{"red", "blue"}},
-		{Prompt: "Pick an animal", Options: []string{"cat", "dog"}},
+		{Prompt: "Pick an animal", CorrectAnswer: "cat", Options: []string{"cat", "dog"}},
 	}
 	colorOnly := colorThenAnimal[:1]
 
@@ -328,7 +324,7 @@ func Test_QuizHandlerRestart(t *testing.T) {
 func Test_QuizHandlerRejectsCSRFTokenFromAnotherSession(t *testing.T) {
 	questions := []quiz.Question{
 		{Prompt: "Pick a color", CorrectAnswer: "red", Options: []string{"red", "blue"}},
-		{Prompt: "Pick an animal", Options: []string{"cat", "dog"}},
+		{Prompt: "Pick an animal", CorrectAnswer: "cat", Options: []string{"cat", "dog"}},
 	}
 
 	tests := []struct {

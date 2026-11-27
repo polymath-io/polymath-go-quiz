@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/hex"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -56,6 +57,37 @@ func Test_QuizStoreCreateAndGet(t *testing.T) {
 			}
 			if got != tt.wantSession {
 				t.Errorf("Get(%q) = %p, want %p", tt.id, got, tt.wantSession)
+			}
+		})
+	}
+}
+
+func Test_QuizStoreRejectsInvalidQuestions(t *testing.T) {
+	tests := []struct {
+		name      string
+		questions []quiz.Question
+		wantErr   error
+	}{
+		{name: "no questions", questions: nil, wantErr: quiz.ErrNoQuestions},
+		{
+			name:      "unplayable question",
+			questions: []quiz.Question{{Prompt: "Pick a color", Options: []string{"red"}}},
+			wantErr:   quiz.ErrInvalidQuestion,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var store QuizStore
+			session, err := store.NewSession(tt.questions)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("NewSession() error = %v, want %v", err, tt.wantErr)
+			}
+			if session != nil {
+				t.Errorf("NewSession() returned a session for invalid questions")
+			}
+			if len(store.sessions) != 0 {
+				t.Errorf("NewSession() stored %d sessions for invalid questions", len(store.sessions))
 			}
 		})
 	}

@@ -1,6 +1,9 @@
 package quiz
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func Test_NewCopiesQuestions(t *testing.T) {
 	tests := []struct {
@@ -54,6 +57,58 @@ func colorQuestions() []Question {
 	return []Question{
 		{Prompt: "Pick a color", CorrectAnswer: "red", Options: []string{"red", "blue"}},
 		{Prompt: "Pick an animal", CorrectAnswer: "cat", Options: []string{"cat", "dog"}},
+	}
+}
+
+func Test_ValidateQuestions(t *testing.T) {
+	tests := []struct {
+		name      string
+		questions []Question
+		wantErr   error // nil means valid
+	}{
+		{name: "valid set", questions: colorQuestions()},
+		{
+			name:      "correct answer in a different case",
+			questions: []Question{{Prompt: "Pick", CorrectAnswer: "RED", Options: []string{"red"}}},
+		},
+		{name: "no questions", questions: nil, wantErr: ErrNoQuestions},
+		{name: "empty list", questions: []Question{}, wantErr: ErrNoQuestions},
+		{
+			name:      "blank prompt",
+			questions: []Question{{Prompt: "  ", CorrectAnswer: "red", Options: []string{"red"}}},
+			wantErr:   ErrInvalidQuestion,
+		},
+		{
+			name:      "no options",
+			questions: []Question{{Prompt: "Pick", CorrectAnswer: "red"}},
+			wantErr:   ErrInvalidQuestion,
+		},
+		{
+			name:      "correct answer not an option",
+			questions: []Question{{Prompt: "Pick", CorrectAnswer: "green", Options: []string{"red"}}},
+			wantErr:   ErrInvalidQuestion,
+		},
+		{
+			name: "later question invalid",
+			questions: append(colorQuestions(),
+				Question{Prompt: "Pick", Options: []string{"red"}}),
+			wantErr: ErrInvalidQuestion,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateQuestions(tt.questions)
+			if tt.wantErr == nil {
+				if err != nil {
+					t.Fatalf("ValidateQuestions() error = %v, want nil", err)
+				}
+				return
+			}
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("ValidateQuestions() error = %v, want %v", err, tt.wantErr)
+			}
+		})
 	}
 }
 
