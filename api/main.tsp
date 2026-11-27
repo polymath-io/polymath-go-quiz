@@ -51,9 +51,14 @@ model QuizState {
   /** The question to answer now. Absent once the quiz is done. */
   question?: Question;
 
-  /** 1-based number of the current question; equals totalQuestions once done. */
+  /**
+   * 1-based number of the current question. Once the quiz is done it equals
+   * totalQuestions. A quiz always has at least one question.
+   */
+  @minValue(1)
   questionNumber: int32;
 
+  @minValue(1)
   totalQuestions: int32;
 
   /** Absent until the first answer has been submitted. */

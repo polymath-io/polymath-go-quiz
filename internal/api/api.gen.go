@@ -69,7 +69,8 @@ type QuizState struct {
 	// Question The question to answer now. Absent once the quiz is done.
 	Question *Question `json:"question,omitempty"`
 
-	// QuestionNumber 1-based number of the current question; equals totalQuestions once done.
+	// QuestionNumber 1-based number of the current question. Once the quiz is done it equals
+	// totalQuestions. A quiz always has at least one question.
 	QuestionNumber int32 `json:"questionNumber"`
 	TotalQuestions int32 `json:"totalQuestions"`
 }

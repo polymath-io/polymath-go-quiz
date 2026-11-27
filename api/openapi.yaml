@@ -174,10 +174,14 @@ components:
         questionNumber:
           type: integer
           format: int32
-          description: 1-based number of the current question; equals totalQuestions once done.
+          minimum: 1
+          description: |-
+            1-based number of the current question. Once the quiz is done it equals
+            totalQuestions. A quiz always has at least one question.
         totalQuestions:
           type: integer
           format: int32
+          minimum: 1
         lastAnswer:
           allOf:
             - $ref: '#/components/schemas/LastAnswer'
