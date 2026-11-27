@@ -1,0 +1,196 @@
+openapi: 3.0.0
+info:
+  title: Quiz API
+  version: 1.0.0
+  description: |-
+    Quiz API. Each visitor plays their own quiz, identified by a session ID in
+    the path. The ID is a random 128-bit value and acts as the access key, so
+    there is no cookie or CSRF token: a cross-site request cannot target a quiz
+    without already knowing its ID.
+tags: []
+paths:
+  /quizzes:
+    post:
+      operationId: createQuiz
+      description: Start a new quiz with its own state.
+      parameters: []
+      responses:
+        '201':
+          description: The request has succeeded and a new resource has been created as a result.
+          headers:
+            location:
+              required: true
+              description: Path of the new quiz, /quizzes/{quizId}.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuizState'
+  /quizzes/{quizId}:
+    get:
+      operationId: getQuiz
+      description: Get the current state of a quiz.
+      parameters:
+        - $ref: '#/components/parameters/QuizPath'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuizState'
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+  /quizzes/{quizId}/answers:
+    post:
+      operationId: submitAnswer
+      description: |-
+        Submit an answer to the current question. The response is the quiz state
+        after the answer, including `lastAnswer`.
+      parameters:
+        - $ref: '#/components/parameters/QuizPath'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuizState'
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '409':
+          description: The request conflicts with the current state of the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitAnswerRequest'
+  /quizzes/{quizId}/restart:
+    post:
+      operationId: restartQuiz
+      description: Reset the quiz to its first question and clear the previous result.
+      parameters:
+        - $ref: '#/components/parameters/QuizPath'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuizState'
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+components:
+  parameters:
+    QuizPath:
+      name: quizId
+      in: path
+      required: true
+      description: Session ID returned when the quiz was created.
+      schema:
+        type: string
+  schemas:
+    ErrorBody:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+    LastAnswer:
+      type: object
+      required:
+        - correct
+        - message
+      properties:
+        correct:
+          type: boolean
+        message:
+          type: string
+          description: Human-readable feedback, such as "well done".
+      description: The outcome of the most recently submitted answer.
+    Question:
+      type: object
+      required:
+        - prompt
+        - options
+      properties:
+        prompt:
+          type: string
+        options:
+          type: array
+          items:
+            type: string
+          description: Answers the player may choose from.
+      description: A question as shown to the player. The correct answer is never exposed.
+    QuizPhase:
+      type: string
+      enum:
+        - InProgress
+        - Done
+      description: Whether the quiz is still asking questions.
+    QuizState:
+      type: object
+      required:
+        - id
+        - phase
+        - questionNumber
+        - totalQuestions
+      properties:
+        id:
+          type: string
+          description: Session ID of this quiz (UUID v4).
+        phase:
+          $ref: '#/components/schemas/QuizPhase'
+        question:
+          allOf:
+            - $ref: '#/components/schemas/Question'
+          description: The question to answer now. Absent once the quiz is done.
+        questionNumber:
+          type: integer
+          format: int32
+          description: 1-based number of the current question; equals totalQuestions once done.
+        totalQuestions:
+          type: integer
+          format: int32
+        lastAnswer:
+          allOf:
+            - $ref: '#/components/schemas/LastAnswer'
+          description: Absent until the first answer has been submitted.
+      description: Everything a client needs to render the quiz.
+    SubmitAnswerRequest:
+      type: object
+      required:
+        - answer
+      properties:
+        answer:
+          type: string
+          description: One of the current question's options, compared case-insensitively.
+servers:
+  - url: http://localhost:8083
+    description: Local development server
+    variables: {}

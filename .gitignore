@@ -12,3 +12,7 @@
 # Operating system files
 .DS_Store
 Thumbs.db
+
+# TypeSpec toolchain (recreated by npm install in api/)
+/api/node_modules/
+/api/package-lock.json
