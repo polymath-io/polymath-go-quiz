@@ -47,4 +47,4 @@ Added beyond the original plan:
 4. ~~Generate the OpenAPI specification from TypeSpec.~~
 5. ~~Use oapi-codegen to generate the Go server types and strict-server interface from OpenAPI.~~
 6. Integrate the quiz logic with the generated server, port the existing tests, and verify the endpoints with tests.
-7. Point the HTML page at the JSON API and re-check the full flow in a browser.
+7. Point the HTML page at the JSON API, use radio buttons for the options, and re-check the full flow in a browser.
