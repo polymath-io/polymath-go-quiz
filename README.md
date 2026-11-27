@@ -43,8 +43,8 @@ Added beyond the original plan:
 
 1. ~~Move startup into cmd/quiz-server and the quiz logic, HTTP handling, and embedded HTML into the internal packages above.~~
 2. ~~Add the quiz/session ID to the quiz state and handlers.~~
-3. Define the quiz API in TypeSpec.
-4. Generate the OpenAPI specification from TypeSpec.
-5. Use oapi-codegen to generate the Go server types and strict-server interface from OpenAPI.
+3. ~~Define the quiz API in TypeSpec.~~
+4. ~~Generate the OpenAPI specification from TypeSpec.~~
+5. ~~Use oapi-codegen to generate the Go server types and strict-server interface from OpenAPI.~~
 6. Integrate the quiz logic with the generated server, port the existing tests, and verify the endpoints with tests.
 7. Point the HTML page at the JSON API and re-check the full flow in a browser.
