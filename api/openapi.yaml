@@ -4,9 +4,10 @@ info:
   version: 1.0.0
   description: |-
     Quiz API. Each visitor plays their own quiz, identified by a session ID in
-    the path. The ID is a random 128-bit value and acts as the access key, so
-    there is no cookie or CSRF token: a cross-site request cannot target a quiz
-    without already knowing its ID.
+    the path. The ID is an unguessable random value (UUID v4) that works as a
+    bearer key: anyone who holds it can read and change that quiz. It is not
+    authentication. There are no cookies or other credentials the browser
+    attaches automatically, so there is no CSRF token.
 tags: []
 paths:
   /quizzes:
